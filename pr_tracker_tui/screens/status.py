@@ -331,7 +331,17 @@ class StatusScreen(Screen):
             )
 
         # ── Local installations ──
-        installs = data.get("local", [])
+        installs = list(data.get("local", []))
+        # Show initializing deploy jobs as phantom entries
+        known_names = {inst.get("name", "") for inst in installs}
+        for job in deploy_jobs:
+            if job.install_name and job.install_name not in known_names:
+                installs.append({
+                    "name": job.install_name,
+                    "path": "",
+                    "_initializing": True,
+                    "_job_phase": job.phase,
+                })
         parts.append("[bold]━━ Local Installations ━━[/bold]\n\n")
         if not installs:
             parts.append("  [dim]None found. Use deploy (d) to create one.[/dim]\n\n")
@@ -351,7 +361,12 @@ class StatusScreen(Screen):
                     inst=inst,
                 ))
 
-                if not has_status:
+                if inst.get("_initializing"):
+                    phase_str = inst.get("_job_phase", "initializing")
+                    parts.append(
+                        f"{sel}[bold]{name}[/bold]  [yellow]◌ {phase_str}…[/yellow]\n\n"
+                    )
+                elif not has_status:
                     parts.append(
                         f"{sel}[bold]{name}[/bold]  [dim]checking…[/dim]\n"
                         f"    [dim]{path}[/dim]\n\n"
