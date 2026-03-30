@@ -1,0 +1,11 @@
+{
+  "repos": [
+    "Comfy-Org/ComfyUI"
+  ],
+  "pinned": [],
+  "skip_station_repos": [
+    "docs",
+    "workflow_templates"
+  ],
+  "runner_servers": []
+}
