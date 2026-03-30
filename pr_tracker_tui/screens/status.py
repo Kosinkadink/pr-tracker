@@ -361,8 +361,15 @@ class StatusScreen(Screen):
                     inst=inst,
                 ))
 
-                if inst.get("_initializing"):
-                    phase_str = inst.get("_job_phase", "initializing")
+                # Check if a deploy job is active for this installation
+                active_phase = None
+                for job in deploy_jobs:
+                    if job.install_name == inst.get("name") and job.phase in ("starting", "ready"):
+                        active_phase = job.phase
+                        break
+
+                if inst.get("_initializing") or active_phase:
+                    phase_str = active_phase or inst.get("_job_phase", "initializing")
                     parts.append(
                         f"{sel}[bold]{name}[/bold]  [yellow]◌ {phase_str}…[/yellow]\n\n"
                     )

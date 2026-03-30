@@ -601,6 +601,7 @@ class PRTrackerApp(App):
     def deploy_init_background(self, job: LocalDeployJob) -> None:
         """Create a new comfy_runner installation in the background."""
         install_name = self._next_install_name()
+        job.install_name = install_name
         job.phase = "starting"
         job.log_lines.append(f"Creating installation '{install_name}'…")
 
@@ -608,7 +609,6 @@ class PRTrackerApp(App):
             try:
                 from comfy_runner.installations import init_installation
                 init_installation(name=install_name, send_output=job.append_output)
-                job.install_name = install_name
                 job.phase = "ready"
                 job.log_lines.append("✓ Installation ready — starting ComfyUI…")
                 self.call_from_thread(self.deploy_start_background, job)
