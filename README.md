@@ -22,7 +22,7 @@ chmod +x setup_env.sh && ./setup_env.sh
 
 Create a `githubtoken.txt` in the project root containing a [GitHub personal access token](https://github.com/settings/tokens).
 
-> **Note:** `config/people.json` is **not** included in the repo (gitignored). It must be provided separately — e.g. via `setup_workspace.ps1` from the comfy-vibe-station workspace.
+> **Note:** `config/people.json` and `config/pr-tracker.json` are **not** included in the repo (gitignored). They must be provided separately — e.g. via `setup_workspace.ps1` from the comfy-vibe-station workspace. See [Configuration](#configuration) below for the expected format.
 
 ## CLI Usage
 
@@ -121,15 +121,68 @@ python -m pr_tracker_tui
 ./run_tui.sh    # Linux/macOS
 ```
 
-## Data Files
+## Configuration
+
+All config files live in `config/`. Private files are gitignored and must be created manually or copied from a parent workspace.
+
+### `config/people.json` *(gitignored)*
+
+Maps color groups to GitHub usernames. PRs/issues authored by these users are shown in `list`.
+
+```json
+{
+  "green": ["robinjhuang", "pythongosssss", "ltdrdata"],
+  "blue": ["kaili-yang"]
+}
+```
+
+Colors are used for display in the TUI. All usernames across all groups are tracked.
+
+### `config/pr-tracker.json` *(gitignored)*
+
+Main tracker configuration — tracked repos, pinned items, station settings, and runner servers.
+
+```json
+{
+  "repos": [
+    "Comfy-Org/ComfyUI",
+    "Comfy-Org/ComfyUI-Desktop-2.0-Beta"
+  ],
+  "pinned": [
+    {"repo": "owner/repo", "number": 123, "type": "pr"}
+  ],
+  "skip_station_repos": ["docs", "workflow_templates"],
+  "runner_servers": [
+    {"name": "local", "url": "http://127.0.0.1:9189"}
+  ]
+}
+```
+
+| Key | Description |
+|-----|-------------|
+| `repos` | List of `owner/repo` strings to scan for PRs/issues. Managed via `repo add/rm`. |
+| `pinned` | One-off PRs/issues from any repo. Managed via `pin/unpin`. |
+| `skip_station_repos` | Repos to skip when cloning stations (large/unnecessary repos). |
+| `runner_servers` | comfy-runner server entries for remote deploy. Managed via `server add/rm`. |
+
+If this file is missing, defaults to tracking `Comfy-Org/ComfyUI` only.
+
+### `config/pr-tags.json` *(committed)*
+
+Custom tags applied to PRs/issues. Managed via `tag add/rm/list`.
+
+```json
+{
+  "ComfyUI#1234": ["urgent", "needs-review"]
+}
+```
+
+### Other files
 
 | File | Committed | Description |
 |------|-----------|-------------|
-| `config/people.json` | **No** | GitHub usernames to track (gitignored) |
-| `config/pr-tracker.json` | Yes | Tracked repos and pinned items |
-| `config/pr-tags.json` | Yes | Custom tags on PRs/issues |
-| `config/stations.json` | **No** | Station metadata (gitignored) |
-| `githubtoken.txt` | **No** | GitHub token (gitignored) |
+| `config/stations.json` | **No** | Auto-generated station metadata (gitignored) |
+| `githubtoken.txt` | **No** | GitHub personal access token (gitignored) |
 
 ## Caching
 
