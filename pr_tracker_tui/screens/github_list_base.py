@@ -225,6 +225,7 @@ class GitHubListScreen(Screen):
         if gen != self._fetch_gen:
             return
         if replace:
+            self._save_cursor()
             table = self.query_one("#pr-table", DataTable)
             table.clear()
             self._item_data = []
@@ -282,6 +283,7 @@ class GitHubListScreen(Screen):
 
     def _apply_filter(self) -> None:
         """Rebuild the table with only rows matching the current search."""
+        self._save_cursor()
         table = self.query_one("#pr-table", DataTable)
         table.clear()
         self._filtered = []
@@ -296,6 +298,7 @@ class GitHubListScreen(Screen):
             self._filtered.append(i)
             table.add_row(*self._item_row_cells(item), key=self._item_row_key(item))
 
+        self._restore_cursor()
         total = len(self._item_data)
         shown = len(self._filtered)
         kind = self._item_kind_label()
@@ -469,18 +472,7 @@ class GitHubListScreen(Screen):
             self._focused_row_key = self._item_row_key(item)
 
     def _restore_cursor(self) -> None:
-        """Schedule cursor restoration after Textual finishes layout.
-
-        Row additions and layout changes (hiding LoadingIndicator, etc.) are
-        processed asynchronously.  A short timer ensures we move the cursor
-        after all pending layout/scroll updates have settled.
-        """
-        if not self._focused_row_key:
-            return
-        self.set_timer(0.05, self._do_restore_cursor)
-
-    def _do_restore_cursor(self) -> None:
-        """Actually move the cursor — called after layout settles."""
+        """Move cursor back to the previously focused row key, if present."""
         if not self._focused_row_key:
             return
         table = self.query_one("#pr-table", DataTable)
