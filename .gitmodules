@@ -1,0 +1,3 @@
+[submodule "comfy-runner"]
+	path = comfy-runner
+	url = https://github.com/Kosinkadink/comfy-runner.git
