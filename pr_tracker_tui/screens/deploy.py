@@ -236,7 +236,7 @@ class RemoteDeployScreen(ModalScreen):
             servers = load_runner_servers()
             url = servers[0]["url"] if servers else "http://127.0.0.1:9189"
         path = f"/{installation}/deploy" if installation else "/deploy"
-        body: dict = {"repo": self._pr.get("repo", ""), "start": True}
+        body: dict = {"repo": self._pr.get("repo", ""), "start": True, "title": self._pr.get("title", "")}
         branch = self._pr.get("branch", "")
         number = self._pr.get("number")
         if branch and not number:

@@ -457,6 +457,7 @@ class StatusScreen(Screen):
                             # Deployed PR / ref info
                             deployed_pr = ri.get("deployed_pr")
                             deployed_repo = ri.get("deployed_repo", "")
+                            deployed_title = ri.get("deployed_title", "")
                             head_commit = ri.get("head_commit", "")
                             if deployed_pr:
                                 short_repo = deployed_repo.split("/", 1)[1] if "/" in deployed_repo else deployed_repo
@@ -466,6 +467,8 @@ class StatusScreen(Screen):
                                 if head_commit:
                                     ref_str += f"  [dim]@ {escape(head_commit[:8])}[/dim]"
                                 parts.append(f"{ref_str}\n")
+                                if deployed_title:
+                                    parts.append(f"    {escape(deployed_title)}\n")
                             elif head_commit:
                                 parts.append(f"    [dim]@ {escape(head_commit[:8])}[/dim]\n")
                             parts.append("\n")
