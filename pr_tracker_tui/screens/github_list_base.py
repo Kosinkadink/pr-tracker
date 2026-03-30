@@ -468,7 +468,17 @@ class GitHubListScreen(Screen):
             self._focused_row_key = self._item_row_key(item)
 
     def _restore_cursor(self) -> None:
-        """Move cursor back to the previously focused row key, if it exists."""
+        """Move cursor back to the previously focused row key, if it exists.
+
+        Deferred via call_after_refresh so it runs after Textual processes
+        the row additions from add_row/clear.
+        """
+        if not self._focused_row_key:
+            return
+        self.call_after_refresh(self._do_restore_cursor)
+
+    def _do_restore_cursor(self) -> None:
+        """Actually move the cursor — called after render cycle."""
         if not self._focused_row_key:
             return
         table = self.query_one("#pr-table", DataTable)
