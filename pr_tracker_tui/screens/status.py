@@ -1204,29 +1204,39 @@ class StatusScreen(Screen):
             return
 
         name = item.remote_name
+        server_url = item.server_url
         api_path = f"/{name}/workflow-models"
         self.notify(f"Submitting workflow models for {name}…")
 
-        from pr_tracker.runner_client import runner_request
-        result = runner_request(
-            "POST", item.server_url, api_path,
-            json_body={"workflow": workflow},
-        )
-        if not result.get("ok"):
-            self.notify(
-                f"Failed: {result.get('error', '?')}", severity="warning",
+        import threading
+
+        def _run() -> None:
+            from pr_tracker.runner_client import runner_request
+            result = runner_request(
+                "POST", server_url, api_path,
+                json_body={"workflow": workflow},
             )
-            return
+            if not result.get("ok"):
+                self.call_from_thread(
+                    self.notify, f"Failed: {result.get('error', '?')}",
+                    severity="warning",
+                )
+                return
 
-        job_id = result.get("job_id")
-        if not job_id:
-            self.notify("✓ Model downloads complete", timeout=5)
-            return
+            job_id = result.get("job_id")
+            if not job_id:
+                self.call_from_thread(
+                    self.notify, "✓ Model downloads complete", timeout=5,
+                )
+                return
 
-        from .job_progress import JobProgressScreen
-        self.app.push_screen(
-            JobProgressScreen(job_id, item.server_url, label="Model Downloads"),
-        )
+            from .job_progress import JobProgressScreen
+            self.call_from_thread(
+                self.app.push_screen,
+                JobProgressScreen(job_id, server_url, label="Model Downloads"),
+            )
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def action_close(self) -> None:
         if self._models_editing:
