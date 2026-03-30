@@ -1211,40 +1211,43 @@ class StatusScreen(Screen):
         import threading
 
         def _run() -> None:
-            from pr_tracker.runner_client import runner_request
-            result = runner_request(
-                "POST", server_url, api_path,
-                json_body={"workflow": workflow},
-            )
-            if not result.get("ok"):
-                err = result.get("error", "?")
-                self.call_from_thread(
-                    lambda: self.notify(
-                        f"Failed: {err}", severity="warning",
+            try:
+                from pr_tracker.runner_client import runner_request
+                result = runner_request(
+                    "POST", server_url, api_path,
+                    json_body={"workflow": workflow},
+                )
+                if not result.get("ok"):
+                    self.call_from_thread(
+                        self.notify,
+                        f"✗ Models: {result.get('error', '?')}",
+                        severity="warning", timeout=5,
                     )
-                )
-                return
+                    return
 
-            job_id = result.get("job_id")
-            if not job_id:
-                total = result.get("total", 0)
-                missing = result.get("missing", 0)
-                if total and missing == 0:
-                    msg = f"✓ All {total} model(s) already present"
-                else:
-                    msg = "✓ Model downloads complete"
+                job_id = result.get("job_id")
+                if not job_id:
+                    total = result.get("total", 0)
+                    missing = result.get("missing", 0)
+                    if total and missing == 0:
+                        msg = f"✓ All {total} model(s) already present"
+                    else:
+                        msg = "✓ Model downloads complete"
+                    self.call_from_thread(self.notify, msg, timeout=5)
+                    return
+
+                from .job_progress import JobProgressScreen
                 self.call_from_thread(
-                    lambda: self.notify(msg, timeout=5)
+                    self.app.push_screen,
+                    JobProgressScreen(
+                        job_id, server_url, label="Model Downloads",
+                    ),
                 )
-                return
-
-            from .job_progress import JobProgressScreen
-            screen = JobProgressScreen(
-                job_id, server_url, label="Model Downloads",
-            )
-            self.call_from_thread(
-                lambda: self.app.push_screen(screen)
-            )
+            except Exception as e:
+                self.call_from_thread(
+                    self.notify, f"✗ Models error: {e}",
+                    severity="error", timeout=5,
+                )
 
         threading.Thread(target=_run, daemon=True).start()
 
