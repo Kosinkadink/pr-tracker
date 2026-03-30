@@ -5,4 +5,5 @@ __pycache__/
 pr_tracker/.cache/
 config/stations.json
 config/people.json
+config/pr-tracker.json
 githubtoken.txt
