@@ -108,6 +108,23 @@ python pr_tracker.py server rm myserver
 python pr_tracker.py server list
 ```
 
+#### Connecting to Remote Servers
+
+pr-tracker connects to [comfy-runner](https://github.com/Kosinkadink/comfy-runner) servers for deploy, snapshots, and process management. For remote access:
+
+- **Tailscale** (recommended): Start the runner server with `--tailscale`, then add the Tailscale HTTPS URL:
+  ```bash
+  python pr_tracker.py server add remote=https://mybox.tailnet-name.ts.net:9189
+  ```
+  Both machines must be on the same Tailscale network. The connection is private and encrypted.
+
+- **Local**: For same-machine usage, use the default localhost URL:
+  ```bash
+  python pr_tracker.py server add local=http://127.0.0.1:9189
+  ```
+
+See the [comfy-runner README](https://github.com/Kosinkadink/comfy-runner#remote-access-setup) for full Tailscale and ngrok setup instructions.
+
 ### Rate Limit
 
 ```bash
