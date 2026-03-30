@@ -446,6 +446,9 @@ class StatusScreen(Screen):
                                 parts.append(
                                     f"\n    Port [bold]{port}[/bold]  ·  PID {pid}\n"
                                 )
+                                serve = ri.get("serve_url", "")
+                                if serve:
+                                    parts.append(f"    URL: {escape(serve)}\n")
                                 tunnel = ri.get("tunnel_url", "")
                                 if tunnel:
                                     parts.append(f"    Tunnel: {escape(tunnel)}\n")
@@ -556,9 +559,12 @@ class StatusScreen(Screen):
         elif item.kind == "remote":
             ri = item.inst or {}
             if ri.get("running"):
+                serve = ri.get("serve_url", "")
                 tunnel = ri.get("tunnel_url", "")
                 if tunnel:
                     url = tunnel
+                elif serve:
+                    url = serve
                 else:
                     # Derive ComfyUI URL from the runner server's host
                     from urllib.parse import urlparse
