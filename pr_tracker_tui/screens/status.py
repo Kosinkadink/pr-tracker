@@ -1217,9 +1217,11 @@ class StatusScreen(Screen):
                 json_body={"workflow": workflow},
             )
             if not result.get("ok"):
+                err = result.get("error", "?")
                 self.call_from_thread(
-                    self.notify, f"Failed: {result.get('error', '?')}",
-                    severity="warning",
+                    lambda: self.notify(
+                        f"Failed: {err}", severity="warning",
+                    )
                 )
                 return
 
@@ -1232,14 +1234,16 @@ class StatusScreen(Screen):
                 else:
                     msg = "✓ Model downloads complete"
                 self.call_from_thread(
-                    self.notify, msg, timeout=5,
+                    lambda: self.notify(msg, timeout=5)
                 )
                 return
 
             from .job_progress import JobProgressScreen
+            screen = JobProgressScreen(
+                job_id, server_url, label="Model Downloads",
+            )
             self.call_from_thread(
-                self.app.push_screen,
-                JobProgressScreen(job_id, server_url, label="Model Downloads"),
+                lambda: self.app.push_screen(screen)
             )
 
         threading.Thread(target=_run, daemon=True).start()
