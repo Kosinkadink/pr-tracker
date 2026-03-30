@@ -42,8 +42,8 @@ NESTED_REPOS: list[tuple[str, str]] = [
     ("ComfyUI-Advanced-ControlNet", "https://github.com/Kosinkadink/ComfyUI-Advanced-ControlNet.git"),
     ("ComfyUI-VideoHelperSuite", "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git"),
     ("comfyui-dependency-tooling", "https://github.com/Kosinkadink/comfyui-dependency-tooling.git"),
-    ("comfy-runner", "https://github.com/Kosinkadink/comfy_runner.git"),
-    ("pr-tracker", "https://github.com/Kosinkadink/pr_tracker.git"),
+    ("comfy-runner", "https://github.com/Kosinkadink/comfy-runner.git"),
+    ("pr-tracker", "https://github.com/Kosinkadink/pr-tracker.git"),
 ]
 
 COMFY_VIBE_STATION_REPO = "https://github.com/kosinkadink/comfy-vibe-station.git"
