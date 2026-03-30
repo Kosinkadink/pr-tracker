@@ -6,10 +6,11 @@ A CLI + TUI tool for tracking PRs and issues across ComfyUI repositories by cont
 
 - **`pr_tracker/`** — Core library (GitHub API, config, caching, display, station management, runner client)
 - **`pr_tracker_tui/`** — Textual TUI application
+- **`comfy-runner/`** — Git submodule: [Kosinkadink/comfy-runner](https://github.com/Kosinkadink/comfy-runner) (process management, deploy, snapshots)
 
 ## Setup
 
-Requires Python 3.10+. Run the setup script to create a virtualenv and install dependencies:
+Requires Python 3.10+. Run the setup script to create a virtualenv, init the comfy-runner submodule, and install all dependencies:
 
 ```powershell
 # Windows (PowerShell)
@@ -18,6 +19,11 @@ Requires Python 3.10+. Run the setup script to create a virtualenv and install d
 ```bash
 # Linux / macOS
 chmod +x setup_env.sh && ./setup_env.sh
+```
+
+If cloning fresh, use `--recurse-submodules`:
+```bash
+git clone --recurse-submodules https://github.com/Kosinkadink/pr-tracker.git
 ```
 
 Create a `githubtoken.txt` in the project root containing a [GitHub personal access token](https://github.com/settings/tokens).
@@ -183,6 +189,18 @@ Custom tags applied to PRs/issues. Managed via `tag add/rm/list`.
 |------|-----------|-------------|
 | `config/stations.json` | **No** | Auto-generated station metadata (gitignored) |
 | `githubtoken.txt` | **No** | GitHub personal access token (gitignored) |
+
+## Updating comfy-runner
+
+The comfy-runner submodule is pinned to a specific commit. To update it to the latest:
+
+```bash
+git submodule update --remote comfy-runner
+git add comfy-runner
+git commit -m "Update comfy-runner submodule"
+```
+
+> **Note:** In the comfy-vibe-station workspace, a standalone `comfy-runner/` clone exists alongside `pr-tracker/`. The setup scripts prefer the workspace clone over the submodule, so you're always developing against the latest without needing to update the submodule pin.
 
 ## Caching
 
