@@ -1181,7 +1181,7 @@ class StatusScreen(Screen):
         """Load a workflow JSON and send it to the server for model downloads."""
         import json as _json
 
-        file_path = event.value.strip()
+        file_path = event.value.strip().strip('"')
         event.input.display = False
         self._models_editing = False
         item = self._models_item
@@ -1204,12 +1204,28 @@ class StatusScreen(Screen):
             return
 
         name = item.remote_name
-        path = f"/{name}/workflow-models"
+        api_path = f"/{name}/workflow-models"
         self.notify(f"Submitting workflow models for {name}…")
-        self._remote_action_background(
-            "POST", path, "Model downloads",
-            body={"workflow": workflow},
-            server_url=item.server_url,
+
+        from pr_tracker.runner_client import runner_request
+        result = runner_request(
+            "POST", item.server_url, api_path,
+            json_body={"workflow": workflow},
+        )
+        if not result.get("ok"):
+            self.notify(
+                f"Failed: {result.get('error', '?')}", severity="warning",
+            )
+            return
+
+        job_id = result.get("job_id")
+        if not job_id:
+            self.notify("✓ Model downloads complete", timeout=5)
+            return
+
+        from .job_progress import JobProgressScreen
+        self.app.push_screen(
+            JobProgressScreen(job_id, item.server_url, label="Model Downloads"),
         )
 
     def action_close(self) -> None:
