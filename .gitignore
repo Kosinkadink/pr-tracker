@@ -4,4 +4,5 @@ __pycache__/
 .venv/
 pr_tracker/.cache/
 config/stations.json
+config/people.json
 githubtoken.txt
