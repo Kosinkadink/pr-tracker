@@ -42,6 +42,7 @@ class StatusScreen(Screen):
         Binding("R", "restart_remote", "Restart"),
         Binding("T", "tunnel_toggle", "Tunnel"),
         Binding("L", "view_logs", "Logs"),
+        Binding("M", "workflow_models", "Models"),
         Binding("N", "snapshots", "Snapshots"),
         Binding("x,X", "remove_selected", "Remove"),
         Binding("A", "edit_args", "Edit Args"),
@@ -62,6 +63,8 @@ class StatusScreen(Screen):
         self._url_editing: bool = False
         self._args_editing: bool = False
         self._args_item: _Item | None = None
+        self._models_editing: bool = False
+        self._models_item: _Item | None = None
 
     def compose(self) -> ComposeResult:
         yield Input(
@@ -72,6 +75,10 @@ class StatusScreen(Screen):
             placeholder="e.g. --enable-manager --gpu-only",
             id="args-input",
         )
+        yield Input(
+            placeholder="Path to workflow template JSON file",
+            id="models-input",
+        )
         with VerticalScroll(id="status-content"):
             yield Static("[dim]Loading status…[/dim]", id="detail-text")
         yield Footer()
@@ -79,6 +86,7 @@ class StatusScreen(Screen):
     def on_mount(self) -> None:
         self.query_one("#url-input", Input).display = False
         self.query_one("#args-input", Input).display = False
+        self.query_one("#models-input", Input).display = False
         detail = self.query_one("#detail-text", Static)
         detail.can_focus = True
         detail.focus()
@@ -866,6 +874,23 @@ class StatusScreen(Screen):
         from .snapshot import SnapshotScreen
         self.app.push_screen(SnapshotScreen(name, server_url=item.server_url))
 
+    def action_workflow_models(self) -> None:
+        """Prompt for a workflow file to download models from."""
+        item = self._get_selected()
+        if not item or item.kind != "remote":
+            self.notify("Select a remote installation for model downloads")
+            return
+        name = item.remote_name
+        if not name:
+            self.notify("No installation name available")
+            return
+        self._models_item = item
+        self._models_editing = True
+        models_input = self.query_one("#models-input", Input)
+        models_input.value = ""
+        models_input.display = True
+        models_input.focus()
+
     def action_remove_selected(self) -> None:
         """Remove the selected installation (local or remote)."""
         item = self._get_selected()
@@ -999,9 +1024,12 @@ class StatusScreen(Screen):
             self._url_editing = True
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle Enter on URL or args input fields."""
+        """Handle Enter on URL, args, or models input fields."""
         if event.input.id == "args-input":
             self._submit_args(event)
+            return
+        if event.input.id == "models-input":
+            self._submit_models(event)
             return
         if event.input.id != "url-input":
             return
@@ -1149,7 +1177,47 @@ class StatusScreen(Screen):
             t = threading.Thread(target=_run, daemon=True)
             t.start()
 
+    def _submit_models(self, event: Input.Submitted) -> None:
+        """Load a workflow JSON and send it to the server for model downloads."""
+        import json as _json
+
+        file_path = event.value.strip()
+        event.input.display = False
+        self._models_editing = False
+        item = self._models_item
+        self._models_item = None
+        self.query_one("#detail-text", Static).focus()
+
+        if not item or not file_path:
+            return
+
+        from pathlib import Path
+        wf_path = Path(file_path)
+        if not wf_path.exists():
+            self.notify(f"File not found: {file_path}", severity="warning")
+            return
+
+        try:
+            workflow = _json.loads(wf_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            self.notify(f"Invalid JSON: {e}", severity="warning")
+            return
+
+        name = item.remote_name
+        path = f"/{name}/workflow-models"
+        self.notify(f"Submitting workflow models for {name}…")
+        self._remote_action_background(
+            "POST", path, "Model downloads",
+            body={"workflow": workflow},
+            server_url=item.server_url,
+        )
+
     def action_close(self) -> None:
+        if self._models_editing:
+            self.query_one("#models-input", Input).display = False
+            self._models_editing = False
+            self._models_item = None
+            return
         if self._args_editing:
             self.query_one("#args-input", Input).display = False
             self._args_editing = False
