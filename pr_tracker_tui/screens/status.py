@@ -19,7 +19,7 @@ from textual.worker import Worker, WorkerState
 @dataclass
 class _Item:
     """A selectable row on the status screen."""
-    kind: str          # "deploy" | "install" | "remote"
+    kind: str          # "install" | "remote" | "server"
     label: str         # display name for notifications
     job: Any = None    # LocalDeployJob (for deploy items)
     inst: dict | None = None  # installation dict (for install/remote items)
@@ -271,64 +271,12 @@ class StatusScreen(Screen):
         parts: list[str] = []
         items: list[_Item] = []
 
-        # ── Active deploy jobs ──
         deploy_jobs = self.app.deploy_jobs
-        if deploy_jobs:
-            parts.append("[bold]━━ Active Deploys ━━[/bold]\n\n")
-            for job in deploy_jobs:
-                idx = len(items)
-                sel = "▸ " if idx == self._selected else "  "
-                pr_num = job.pr.get("number", "?")
-                pr_title = escape(job.pr.get("title", "")[:50])
-                repo = job.pr.get("repo", "")
-                short_repo = repo.split("/", 1)[1] if "/" in repo else repo
-                phase = job.phase
-
-                items.append(_Item(
-                    kind="deploy",
-                    label=f"PR #{pr_num}",
-                    job=job,
-                ))
-
-                if phase == "running":
-                    port = job.port or "?"
-                    pid = job.pid or "?"
-                    parts.append(
-                        f"{sel}[bold]#{pr_num}[/bold] [green]● running[/green]  "
-                        f"{short_repo}\n"
-                        f"      {pr_title}\n"
-                        f"      Port [bold]{port}[/bold]  ·  PID {pid}  ·  "
-                        f"http://127.0.0.1:{port}\n\n"
-                    )
-                elif phase == "starting":
-                    parts.append(
-                        f"{sel}[bold]#{pr_num}[/bold] [yellow]◌ starting…[/yellow]  "
-                        f"{short_repo}\n"
-                        f"      {pr_title}\n\n"
-                    )
-                elif phase == "error":
-                    last_err = ""
-                    if job.log_lines:
-                        last_err = escape(job.log_lines[-1][:60])
-                    parts.append(
-                        f"{sel}[bold]#{pr_num}[/bold] [red]✗ error[/red]  "
-                        f"{short_repo}\n"
-                        f"      {pr_title}\n"
-                    )
-                    if last_err:
-                        parts.append(f"      [dim]{last_err}[/dim]\n")
-                    parts.append("\n")
-                else:
-                    parts.append(
-                        f"{sel}[bold]#{pr_num}[/bold] [dim]{phase}[/dim]  "
-                        f"{short_repo}\n"
-                        f"      {pr_title}\n\n"
-                    )
-        else:
-            parts.append(
-                "[bold]━━ Active Deploys ━━[/bold]\n\n"
-                "  [dim]No active deploys. Press d on a PR to start one.[/dim]\n\n"
-            )
+        # Build lookup: install_name → deploy job
+        jobs_by_name: dict[str, Any] = {}
+        for job in deploy_jobs:
+            if job.install_name:
+                jobs_by_name[job.install_name] = job
 
         # ── Local installations ──
         installs = list(data.get("local", []))
@@ -349,30 +297,52 @@ class StatusScreen(Screen):
             for inst in installs:
                 idx = len(items)
                 sel = "▸ " if idx == self._selected else "  "
-                name = escape(inst.get("name", "?"))
+                inst_name_raw = inst.get("name", "?")
+                name = escape(inst_name_raw)
                 path = escape(inst.get("path", "?"))
                 status = inst.get("_status", {})
                 has_status = "_status" in inst
                 running = status.get("running", False)
 
+                # Look up deploy job for PR info
+                job = jobs_by_name.get(inst_name_raw)
+
                 items.append(_Item(
                     kind="install",
                     label=name,
                     inst=inst,
+                    job=job,
                 ))
+
+                # Build PR info line if available
+                pr_line = ""
+                if job:
+                    pr_num = job.pr.get("number")
+                    pr_title = escape(job.pr.get("title", "")[:60])
+                    repo = job.pr.get("repo", "")
+                    short_repo = repo.split("/", 1)[1] if "/" in repo else repo
+                    branch = job.pr.get("branch", "")
+                    if pr_num:
+                        pr_line = f"    [cyan]PR #{pr_num}[/cyan]  [dim]{short_repo}[/dim]\n    {pr_title}\n"
+                    elif branch:
+                        pr_line = f"    [cyan]Branch: {escape(branch)}[/cyan]  [dim]{short_repo}[/dim]\n"
 
                 # Check if a deploy job is active for this installation
                 active_phase = None
-                for job in deploy_jobs:
-                    if job.install_name == inst.get("name") and job.phase in ("starting", "ready"):
-                        active_phase = job.phase
-                        break
+                if job and job.phase in ("starting", "ready"):
+                    active_phase = job.phase
 
                 if inst.get("_initializing") or active_phase:
                     phase_str = active_phase or inst.get("_job_phase", "initializing")
                     parts.append(
-                        f"{sel}[bold]{name}[/bold]  [yellow]◌ {phase_str}…[/yellow]\n\n"
+                        f"{sel}[bold]{name}[/bold]  [yellow]◌ {phase_str}…[/yellow]\n"
                     )
+                    if pr_line:
+                        parts.append(pr_line)
+                    if job and job.phase == "error" and job.log_lines:
+                        last_err = escape(job.log_lines[-1][:60])
+                        parts.append(f"    [dim]{last_err}[/dim]\n")
+                    parts.append("\n")
                 elif not has_status:
                     parts.append(
                         f"{sel}[bold]{name}[/bold]  [dim]checking…[/dim]\n"
@@ -393,12 +363,20 @@ class StatusScreen(Screen):
                     parts.append(
                         f"\n    Port [bold]{port}[/bold]  ·  PID {pid}\n"
                         f"    http://127.0.0.1:{port}\n"
+                    )
+                    if pr_line:
+                        parts.append(pr_line)
+                    parts.append(
                         f"    [dim]{path}[/dim]\n"
                         f"    Args: [dim]{escape(inst.get('launch_args', '') or '(none)')}[/dim]\n\n"
                     )
                 else:
                     parts.append(
                         f"{sel}[bold]{name}[/bold]  [dim]○ stopped[/dim]\n"
+                    )
+                    if pr_line:
+                        parts.append(pr_line)
+                    parts.append(
                         f"    [dim]{path}[/dim]\n"
                         f"    Args: [dim]{escape(inst.get('launch_args', '') or '(none)')}[/dim]\n\n"
                     )
@@ -562,18 +540,14 @@ class StatusScreen(Screen):
             self.notify("Nothing to open")
             return
 
-        if item.kind == "deploy":
-            job = item.job
-            if job.phase == "running" and job.port:
-                webbrowser.open(f"http://127.0.0.1:{job.port}")
-                self.notify(f"Opened port {job.port}")
-            else:
-                self.notify(f"{item.label} is not running")
-        elif item.kind == "install":
+        if item.kind == "install":
             status = (item.inst or {}).get("_status", {})
             if status.get("running") and status.get("port"):
                 webbrowser.open(f"http://127.0.0.1:{status['port']}")
                 self.notify(f"Opened port {status['port']}")
+            elif item.job and item.job.phase == "running" and item.job.port:
+                webbrowser.open(f"http://127.0.0.1:{item.job.port}")
+                self.notify(f"Opened port {item.job.port}")
             else:
                 self.notify(f"{item.label} is not running")
         elif item.kind == "remote":
@@ -604,18 +578,10 @@ class StatusScreen(Screen):
         repo = ""
         number = None
 
-        if item.kind == "deploy":
-            pr = item.job.pr
-            repo = pr.get("repo", "")
-            number = pr.get("number")
-        elif item.kind == "install":
-            # Find the deploy job for this installation
-            inst_name = (item.inst or {}).get("name", "")
-            for job in self.app.deploy_jobs:
-                if job.install_name == inst_name:
-                    repo = job.pr.get("repo", "")
-                    number = job.pr.get("number")
-                    break
+        if item.kind == "install":
+            if item.job:
+                repo = item.job.pr.get("repo", "")
+                number = item.job.pr.get("number")
         elif item.kind == "remote":
             ri = item.inst or {}
             number = ri.get("deployed_pr")
@@ -632,14 +598,12 @@ class StatusScreen(Screen):
             self.notify("Nothing to stop")
             return
 
-        if item.kind == "deploy":
-            job = item.job
-            if job.phase == "running":
-                self.app.deploy_stop_background(job)
+        if item.kind == "install":
+            # If there's an active deploy job, use its stop method
+            if item.job and item.job.phase == "running":
+                self.app.deploy_stop_background(item.job)
                 self.notify(f"Stopping {item.label}…")
-            else:
-                self.notify(f"{item.label} is not running")
-        elif item.kind == "install":
+                return
             status = (item.inst or {}).get("_status", {})
             if status.get("running"):
                 name = (item.inst or {}).get("name", "")
@@ -684,17 +648,11 @@ class StatusScreen(Screen):
             self.notify("Nothing to restart")
             return
 
-        if item.kind == "deploy":
-            job = item.job
-            if job.phase == "running" and job.install_name:
-                self._restart_local_background(job.install_name)
-                self.notify(f"Restarting {item.label}…")
-            else:
-                self.notify(f"{item.label} is not running")
-        elif item.kind == "install":
+        if item.kind == "install":
             name = (item.inst or {}).get("name", "")
             status = (item.inst or {}).get("_status", {})
-            if status.get("running"):
+            is_running = status.get("running", False) or (item.job and item.job.phase == "running")
+            if is_running and name:
                 self._restart_local_background(name)
                 self.notify(f"Restarting {item.label}…")
             else:
@@ -738,20 +696,11 @@ class StatusScreen(Screen):
     def action_edit_args(self) -> None:
         """Edit launch_args for the selected installation, then restart."""
         item = self._get_selected()
-        if not item or item.kind not in ("deploy", "install", "remote"):
+        if not item or item.kind not in ("install", "remote"):
             self.notify("Select an installation to edit args")
             return
 
-        if item.kind == "deploy":
-            job = item.job
-            if not job.install_name:
-                self.notify("No installation yet")
-                return
-            from comfy_runner.config import get_installation
-            record = get_installation(job.install_name)
-            inst = record or {}
-        else:
-            inst = item.inst or {}
+        inst = item.inst or {}
         current = inst.get("launch_args", "") or ""
 
         args_input = self.query_one("#args-input", Input)
@@ -819,24 +768,14 @@ class StatusScreen(Screen):
         if not item:
             self.notify("Nothing selected")
             return
-        if item.kind == "deploy":
-            job = item.job
-            if not job.install_name:
-                self.notify("No installation yet")
-                return
-            from comfy_runner.config import get_installation
-            record = get_installation(job.install_name)
-            if not record:
-                self.notify("Installation not found")
-                return
-            path = record.get("path", "")
-            pr_num = job.pr.get("number", "")
-            title = f"Deploy #{pr_num}" if pr_num else job.install_name
-            window = f"deploy-{job.install_name}"
-        elif item.kind == "install":
+        if item.kind == "install":
             path = (item.inst or {}).get("path", "")
             name = (item.inst or {}).get("name", "install")
-            title = name
+            if item.job:
+                pr_num = item.job.pr.get("number", "")
+                title = f"Deploy #{pr_num}" if pr_num else name
+            else:
+                title = name
             window = f"install-{name}"
         elif item.kind == "remote":
             self.notify("Terminal not available for remote installations")
@@ -851,17 +790,10 @@ class StatusScreen(Screen):
     def action_view_deploy(self) -> None:
         """Jump to deploy screen for the selected deploy job or local install."""
         item = self._get_selected()
-        if item and item.kind == "deploy":
+        if item and item.kind == "install" and item.job:
             from .local_deploy import LocalDeployScreen
             self.app.push_screen(LocalDeployScreen(item.job.pr))
         elif item and item.kind == "install":
-            # Find a deploy job that uses this installation
-            inst_name = (item.inst or {}).get("name", "")
-            for job in self.app.deploy_jobs:
-                if job.install_name == inst_name:
-                    from .local_deploy import LocalDeployScreen
-                    self.app.push_screen(LocalDeployScreen(job.pr))
-                    return
             self.notify("No active deploy for this installation")
         else:
             self.notify("No active deploys")
@@ -887,24 +819,13 @@ class StatusScreen(Screen):
     def action_view_logs(self) -> None:
         """Open log viewer for the selected installation (local, deploy, or remote)."""
         item = self._get_selected()
-        if not item or item.kind not in ("deploy", "install", "remote"):
+        if not item or item.kind not in ("install", "remote"):
             self.notify("Select an installation to view logs")
             return
 
         from .log_viewer import LogViewerScreen
 
-        if item.kind == "deploy":
-            job = item.job
-            if not job.install_name:
-                self.notify("No installation yet")
-                return
-            from comfy_runner.config import get_installation
-            record = get_installation(job.install_name)
-            path = record.get("path", "") if record else ""
-            self.app.push_screen(
-                LogViewerScreen(job.install_name, install_path=path)
-            )
-        elif item.kind == "remote":
+        if item.kind == "remote":
             name = item.remote_name
             if not name:
                 self.notify("No installation name available")
@@ -942,7 +863,7 @@ class StatusScreen(Screen):
         if not item:
             self.notify("Nothing to remove")
             return
-        if item.kind in ("deploy", "server"):
+        if item.kind == "server":
             self.notify("Use Y to remove a server", severity="warning")
             return
         if item.kind == "install":
@@ -1171,14 +1092,12 @@ class StatusScreen(Screen):
                     )
 
             threading.Thread(target=_run, daemon=True).start()
-        elif item.kind in ("install", "deploy"):
+        elif item.kind == "install":
             import threading
-            if item.kind == "deploy":
-                inst_name = item.job.install_name or ""
+            inst_name = (item.inst or {}).get("name", "")
+            was_running = (item.inst or {}).get("_status", {}).get("running", False)
+            if not was_running and item.job:
                 was_running = item.job.phase == "running"
-            else:
-                inst_name = (item.inst or {}).get("name", "")
-                was_running = (item.inst or {}).get("_status", {}).get("running", False)
             if not inst_name:
                 self.notify("No installation name")
                 return
