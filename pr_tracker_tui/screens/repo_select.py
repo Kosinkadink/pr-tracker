@@ -37,8 +37,7 @@ class RepoSelectScreen(Screen):
         self._repos = config["repos"]
         option_list = self.query_one("#repo-list", OptionList)
         for repo in self._repos:
-            short = repo.split("/", 1)[1] if "/" in repo else repo
-            option_list.add_option(Option(short, id=repo))
+            option_list.add_option(Option(repo, id=repo))
         if self._repos:
             option_list.highlighted = 0
         option_list.focus()
