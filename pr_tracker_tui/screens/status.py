@@ -1225,8 +1225,14 @@ class StatusScreen(Screen):
 
             job_id = result.get("job_id")
             if not job_id:
+                total = result.get("total", 0)
+                missing = result.get("missing", 0)
+                if total and missing == 0:
+                    msg = f"✓ All {total} model(s) already present"
+                else:
+                    msg = "✓ Model downloads complete"
                 self.call_from_thread(
-                    self.notify, "✓ Model downloads complete", timeout=5,
+                    self.notify, msg, timeout=5,
                 )
                 return
 
