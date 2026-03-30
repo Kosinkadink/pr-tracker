@@ -1,0 +1,130 @@
+/* PR Tracker TUI — dark theme */
+
+Screen {
+    background: $surface;
+}
+
+#pr-table {
+    height: 1fr;
+}
+
+#loading {
+    height: 1;
+}
+
+#search-input {
+    dock: top;
+    height: 1;
+    margin: 0 1;
+    border: none;
+    padding: 0 1;
+}
+
+#status-bar {
+    dock: bottom;
+    height: 1;
+    background: $surface-darken-1;
+    color: $text;
+    padding: 0 1;
+}
+
+#filter-bar {
+    dock: top;
+    height: 1;
+    background: $primary-background;
+    color: $text;
+    padding: 0 1;
+}
+
+/* Repo selector */
+#repo-list {
+    height: 1fr;
+    margin: 1 2;
+}
+
+/* Confirm modal */
+ConfirmScreen {
+    align: center middle;
+}
+
+#confirm-dialog {
+    width: 40;
+    height: auto;
+    max-height: 8;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+/* Deploy confirmation modal */
+DeployScreen, RemoteDeployScreen {
+    align: center middle;
+}
+
+#deploy-dialog {
+    width: 60;
+    height: auto;
+    max-height: 20;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#deploy-dialog Static {
+    margin-bottom: 1;
+}
+
+/* Status screen (full-screen) */
+#status-content {
+    padding: 1 2;
+}
+
+/* Tag modal */
+TagScreen {
+    align: center middle;
+}
+
+#tag-dialog {
+    width: 55;
+    height: auto;
+    max-height: 16;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#tag-dialog Input {
+    margin-top: 1;
+}
+
+/* Detail / deploy / station screens — full terminal */
+#detail-dialog {
+    padding: 1 2;
+}
+
+#station-create-dialog {
+    padding: 1 2;
+}
+
+#station-log {
+    height: 1fr;
+}
+
+/* Log viewer panel */
+#log-panel {
+    height: 12;
+    border-top: solid $accent;
+    background: $surface-darken-1;
+    padding: 0 1;
+}
+
+/* Runner URL input in StatusScreen */
+#url-input {
+    dock: top;
+    height: 1;
+    margin: 0 1;
+    border: none;
+    padding: 0 1;
+}
+
+/* Station detail screen */

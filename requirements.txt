@@ -1,0 +1,2 @@
+-r pr_tracker/requirements.txt
+-r pr_tracker_tui/requirements.txt
