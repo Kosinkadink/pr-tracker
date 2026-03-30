@@ -36,6 +36,7 @@ class GitHubListScreen(Screen):
         self._people_only: bool = False
         self._people: dict[str, str] = {}
         self._station_items: set[tuple[str, int]] = set()  # (repo, number) pairs with stations
+        self._focused_row_key: str | None = None  # preserved across refreshes
 
     # ------------------------------------------------------------------
     # Abstract hooks — subclasses MUST implement
@@ -166,6 +167,7 @@ class GitHubListScreen(Screen):
         self._fetch_gen += 1
         self._people = {n.lower(): c for n, c in load_people_colors().items()}
         self._load_station_items()
+        self._save_cursor()
 
         table = self.query_one("#pr-table", DataTable)
         table.clear()
@@ -179,6 +181,7 @@ class GitHubListScreen(Screen):
             self._prepare_cached(cached)
             self._item_data = cached
             self._apply_filter()
+            self._restore_cursor()
             kind = self._item_kind_label()
             self._set_status(self._build_status(
                 f"✓ {len(cached)} {kind} ({self._state}) — from cache, refreshing…"
@@ -238,6 +241,7 @@ class GitHubListScreen(Screen):
                 continue
             self._filtered.append(idx)
             table.add_row(*self._item_row_cells(item), key=self._item_row_key(item))
+        self._restore_cursor()
         if not getattr(self, "_enriching", False):
             elapsed = time.monotonic() - self._load_start
             kind = self._item_kind_label()
@@ -456,6 +460,22 @@ class GitHubListScreen(Screen):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _save_cursor(self) -> None:
+        """Remember the row key of the currently focused row."""
+        item = self._selected_item()
+        if item:
+            self._focused_row_key = self._item_row_key(item)
+
+    def _restore_cursor(self) -> None:
+        """Move cursor back to the previously focused row key, if it exists."""
+        if not self._focused_row_key:
+            return
+        table = self.query_one("#pr-table", DataTable)
+        for i, idx in enumerate(self._filtered):
+            if self._item_row_key(self._item_data[idx]) == self._focused_row_key:
+                table.move_cursor(row=i)
+                return
 
     def _selected_item(self) -> dict | None:
         table = self.query_one("#pr-table", DataTable)
