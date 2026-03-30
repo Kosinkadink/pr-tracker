@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+pr_tracker/.cache/
+config/stations.json
+githubtoken.txt
