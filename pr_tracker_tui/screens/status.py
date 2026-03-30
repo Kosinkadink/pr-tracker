@@ -656,24 +656,80 @@ class StatusScreen(Screen):
         t.start()
 
     def action_restart_remote(self) -> None:
-        """Restart the selected remote installation."""
+        """Restart the selected installation (local or remote)."""
         item = self._get_selected()
-        if not item or item.kind != "remote":
-            self.notify("Select a remote installation to restart")
+        if not item:
+            self.notify("Nothing to restart")
             return
-        name = item.remote_name
-        path = f"/{name}/restart" if name else "/restart"
-        self.notify(f"Restarting {item.label}…")
-        self._remote_action_background("POST", path, "Restart", server_url=item.server_url)
+
+        if item.kind == "deploy":
+            job = item.job
+            if job.phase == "running" and job.install_name:
+                self._restart_local_background(job.install_name)
+                self.notify(f"Restarting {item.label}…")
+            else:
+                self.notify(f"{item.label} is not running")
+        elif item.kind == "install":
+            name = (item.inst or {}).get("name", "")
+            status = (item.inst or {}).get("_status", {})
+            if status.get("running"):
+                self._restart_local_background(name)
+                self.notify(f"Restarting {item.label}…")
+            else:
+                self.notify(f"{item.label} is not running")
+        elif item.kind == "remote":
+            name = item.remote_name
+            path = f"/{name}/restart" if name else "/restart"
+            self.notify(f"Restarting {item.label}…")
+            self._remote_action_background("POST", path, "Restart", server_url=item.server_url)
+        else:
+            self.notify("Select an installation to restart")
+
+    def _restart_local_background(self, name: str) -> None:
+        """Restart a local installation in a background thread."""
+        import threading
+
+        def _run() -> None:
+            try:
+                from comfy_runner.process import stop_installation, start_installation
+                from comfy_runner.config import get_installation
+                record = get_installation(name)
+                if not record:
+                    self.call_from_thread(
+                        self.notify, f"Installation '{name}' not found", severity="warning", timeout=5
+                    )
+                    return
+                stop_installation(name=name)
+                start_installation(name=name)
+                self.call_from_thread(
+                    self.notify, f"✓ {name} restarted", timeout=5
+                )
+                self.call_from_thread(self._fetch_status)
+            except Exception as e:
+                self.call_from_thread(
+                    self.notify, f"Restart failed: {e}", severity="error", timeout=5
+                )
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
 
     def action_edit_args(self) -> None:
         """Edit launch_args for the selected installation, then restart."""
         item = self._get_selected()
-        if not item or item.kind not in ("install", "remote"):
+        if not item or item.kind not in ("deploy", "install", "remote"):
             self.notify("Select an installation to edit args")
             return
 
-        inst = item.inst or {}
+        if item.kind == "deploy":
+            job = item.job
+            if not job.install_name:
+                self.notify("No installation yet")
+                return
+            from comfy_runner.config import get_installation
+            record = get_installation(job.install_name)
+            inst = record or {}
+        else:
+            inst = item.inst or {}
         current = inst.get("launch_args", "") or ""
 
         args_input = self.query_one("#args-input", Input)
@@ -807,15 +863,26 @@ class StatusScreen(Screen):
             self._remote_action_background("POST", path, "Tunnel start", server_url=item.server_url)
 
     def action_view_logs(self) -> None:
-        """Open log viewer for the selected installation (local or remote)."""
+        """Open log viewer for the selected installation (local, deploy, or remote)."""
         item = self._get_selected()
-        if not item or item.kind not in ("install", "remote"):
+        if not item or item.kind not in ("deploy", "install", "remote"):
             self.notify("Select an installation to view logs")
             return
 
         from .log_viewer import LogViewerScreen
 
-        if item.kind == "remote":
+        if item.kind == "deploy":
+            job = item.job
+            if not job.install_name:
+                self.notify("No installation yet")
+                return
+            from comfy_runner.config import get_installation
+            record = get_installation(job.install_name)
+            path = record.get("path", "") if record else ""
+            self.app.push_screen(
+                LogViewerScreen(job.install_name, install_path=path)
+            )
+        elif item.kind == "remote":
             name = item.remote_name
             if not name:
                 self.notify("No installation name available")
@@ -1082,10 +1149,14 @@ class StatusScreen(Screen):
                     )
 
             threading.Thread(target=_run, daemon=True).start()
-        elif item.kind == "install":
+        elif item.kind in ("install", "deploy"):
             import threading
-            inst_name = (item.inst or {}).get("name", "")
-            was_running = (item.inst or {}).get("_status", {}).get("running", False)
+            if item.kind == "deploy":
+                inst_name = item.job.install_name or ""
+                was_running = item.job.phase == "running"
+            else:
+                inst_name = (item.inst or {}).get("name", "")
+                was_running = (item.inst or {}).get("_status", {}).get("running", False)
             if not inst_name:
                 self.notify("No installation name")
                 return
