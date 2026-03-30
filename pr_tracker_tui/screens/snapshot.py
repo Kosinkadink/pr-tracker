@@ -111,7 +111,7 @@ class SnapshotScreen(Screen):
             if event.state == WorkerState.SUCCESS:
                 data = event.worker.result or {}
                 if data.get("ok"):
-                    self._render_diff(data.get("diff", {}))
+                    self._render_diff(data.get("diff", {}), data.get("prev_diff"))
                 else:
                     self._set_text(
                         f"[red]Diff error: {escape(data.get('error', '?'))}[/red]"
@@ -200,18 +200,12 @@ class SnapshotScreen(Screen):
         )
         self._set_text("".join(parts))
 
-    def _render_diff(self, diff: dict) -> None:
-        self._view = "diff"
-        item = self._items[self._selected] if self._items else None
-        title = item.label or item.filename if item else "?"
+    @staticmethod
+    def _format_diff_section(diff: dict) -> tuple[list[str], bool]:
+        """Render a single diff dict into markup lines. Returns (lines, has_changes)."""
         parts: list[str] = []
-        parts.append(
-            f"[bold]━━ Diff vs Current — {escape(title)} ━━[/bold]\n\n"
-        )
-
         has_changes = False
 
-        # ComfyUI version
         if diff.get("comfyuiChanged"):
             has_changes = True
             cu = diff.get("comfyui", {})
@@ -225,21 +219,18 @@ class SnapshotScreen(Screen):
                 f"({escape(str(to.get('commit', '?'))[:8])})[/green]\n\n"
             )
 
-        # Nodes added
         for node in diff.get("nodesAdded", []):
             has_changes = True
             nid = escape(node.get("id", "?"))
             ver = escape(str(node.get("version", "?")))
             parts.append(f"  [green]+ node {nid} ({ver})[/green]\n")
 
-        # Nodes removed
         for node in diff.get("nodesRemoved", []):
             has_changes = True
             nid = escape(node.get("id", "?"))
             ver = escape(str(node.get("version", "?")))
             parts.append(f"  [red]- node {nid} ({ver})[/red]\n")
 
-        # Nodes changed
         for node in diff.get("nodesChanged", []):
             has_changes = True
             nid = escape(node.get("id", "?"))
@@ -261,7 +252,6 @@ class SnapshotScreen(Screen):
         if diff.get("nodesAdded") or diff.get("nodesRemoved") or diff.get("nodesChanged"):
             parts.append("\n")
 
-        # Pip added
         for pkg in diff.get("pipsAdded", []):
             has_changes = True
             parts.append(
@@ -269,7 +259,6 @@ class SnapshotScreen(Screen):
                 f"({escape(str(pkg.get('version', '?')))})[/green]\n"
             )
 
-        # Pip removed
         for pkg in diff.get("pipsRemoved", []):
             has_changes = True
             parts.append(
@@ -277,7 +266,6 @@ class SnapshotScreen(Screen):
                 f"({escape(str(pkg.get('version', '?')))})[/red]\n"
             )
 
-        # Pip changed
         for pkg in diff.get("pipsChanged", []):
             has_changes = True
             parts.append(
@@ -287,7 +275,36 @@ class SnapshotScreen(Screen):
             )
 
         if not has_changes:
-            parts.append("  [dim]No differences — current state matches snapshot.[/dim]\n")
+            parts.append("  [dim]No differences.[/dim]\n")
+
+        return parts, has_changes
+
+    def _render_diff(self, diff: dict, prev_diff: dict | None = None) -> None:
+        self._view = "diff"
+        idx = self._selected
+        item = self._items[idx] if self._items else None
+        title = item.label or item.filename if item else "?"
+        parts: list[str] = []
+
+        # Section 1: diff from previous snapshot
+        if prev_diff is not None:
+            prev_item = self._items[idx + 1] if idx + 1 < len(self._items) else None
+            prev_title = prev_item.label or prev_item.filename if prev_item else "?"
+            parts.append(
+                f"[bold]━━ Changes from Previous Snapshot — {escape(prev_title)} ━━[/bold]\n\n"
+            )
+            section, _ = self._format_diff_section(prev_diff)
+            parts.extend(section)
+            parts.append("\n")
+        else:
+            parts.append("[dim]No previous snapshot to compare against.[/dim]\n\n")
+
+        # Section 2: diff vs current state
+        parts.append(
+            f"[bold]━━ Diff vs Current State — {escape(title)} ━━[/bold]\n\n"
+        )
+        section, _ = self._format_diff_section(diff)
+        parts.extend(section)
 
         parts.append("\n[dim]Escape/q: back to list  ·  R: restore this snapshot[/dim]\n")
         self._set_text("".join(parts))
@@ -448,20 +465,37 @@ class SnapshotScreen(Screen):
         if not self._items:
             self.notify("No snapshots to diff")
             return
-        item = self._items[self._selected]
+        idx = self._selected
+        item = self._items[idx]
+        prev_item = self._items[idx + 1] if idx + 1 < len(self._items) else None
         self._set_text("[dim]Loading diff…[/dim]")
         self.run_worker(
-            lambda: self._do_diff(item.filename), thread=True, name="diff"
+            lambda: self._do_diff(item.filename, prev_item.filename if prev_item else None),
+            thread=True, name="diff",
         )
 
-    def _do_diff(self, filename: str) -> dict:
+    def _do_diff(self, filename: str, prev_filename: str | None) -> dict:
         from pr_tracker.runner_client import runner_request
         url = self._get_url()
-        return runner_request(
+        # Diff vs current state
+        current_resp = runner_request(
             "GET", url,
             f"/{self._install_name}/snapshot/{filename}/diff",
             timeout=30,
         )
+        # Diff vs previous snapshot (if there is one)
+        prev_diff: dict | None = None
+        if prev_filename:
+            prev_resp = runner_request(
+                "GET", url,
+                f"/{self._install_name}/snapshot/{prev_filename}/diff/{filename}",
+                timeout=30,
+            )
+            if prev_resp.get("ok"):
+                prev_diff = prev_resp.get("diff", {})
+        result = current_resp.copy() if isinstance(current_resp, dict) else {"ok": False}
+        result["prev_diff"] = prev_diff
+        return result
 
     def action_save_snapshot(self) -> None:
         self.notify("Saving snapshot…")
