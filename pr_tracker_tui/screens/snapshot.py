@@ -34,7 +34,8 @@ class SnapshotScreen(Screen):
         Binding("escape", "close", "Close"),
         Binding("q", "close", "Back"),
         Binding("r", "refresh", "Refresh"),
-        Binding("enter", "view_diff", "Diff"),
+        Binding("enter", "view_detail", "Detail"),
+        Binding("d", "view_diff", "Diff"),
         Binding("R", "restore", "Restore"),
         Binding("S", "save_snapshot", "Save New"),
         Binding("up,k", "cursor_up", "Up", show=False),
@@ -47,7 +48,7 @@ class SnapshotScreen(Screen):
         self._server_url = server_url
         self._items: list[_SnapItem] = []
         self._selected: int = 0
-        self._view: str = "list"  # "list" | "diff"
+        self._view: str = "list"  # "list" | "detail" | "diff"
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="status-content"):
@@ -89,6 +90,22 @@ class SnapshotScreen(Screen):
                     )
             elif event.state == WorkerState.ERROR:
                 self._set_text(f"[red]Fetch failed: {event.worker.error}[/red]")
+
+        elif name == "detail":
+            if event.state == WorkerState.SUCCESS:
+                data = event.worker.result or {}
+                if data.get("ok"):
+                    self._render_detail(
+                        data.get("snapshot", {}),
+                        data.get("diff", {}),
+                        data.get("filename", ""),
+                    )
+                else:
+                    self._set_text(
+                        f"[red]Error: {escape(data.get('error', '?'))}[/red]"
+                    )
+            elif event.state == WorkerState.ERROR:
+                self._set_text(f"[red]Detail failed: {event.worker.error}[/red]")
 
         elif name == "diff":
             if event.state == WorkerState.SUCCESS:
@@ -179,7 +196,7 @@ class SnapshotScreen(Screen):
                 )
 
         parts.append(
-            "[dim]Enter: view diff  ·  R: restore  ·  S: save new  ·  r: refresh[/dim]\n"
+            "[dim]Enter: detail  ·  d: diff  ·  R: restore  ·  S: save new  ·  r: refresh[/dim]\n"
         )
         self._set_text("".join(parts))
 
@@ -288,14 +305,14 @@ class SnapshotScreen(Screen):
             self.action_cursor_down()
 
     def action_cursor_up(self) -> None:
-        if self._view == "diff":
+        if self._view != "list":
             return
         if self._items and self._selected > 0:
             self._selected -= 1
             self._render_list()
 
     def action_cursor_down(self) -> None:
-        if self._view == "diff":
+        if self._view != "list":
             return
         if self._items and self._selected < len(self._items) - 1:
             self._selected += 1
@@ -306,6 +323,126 @@ class SnapshotScreen(Screen):
     def action_refresh(self) -> None:
         self._set_text("[dim]Refreshing…[/dim]")
         self._fetch_snapshots()
+
+    def action_view_detail(self) -> None:
+        if not self._items:
+            self.notify("No snapshots to view")
+            return
+        item = self._items[self._selected]
+        self._set_text("[dim]Loading snapshot…[/dim]")
+        self.run_worker(
+            lambda: self._do_detail(item.filename), thread=True, name="detail"
+        )
+
+    def _do_detail(self, filename: str) -> dict:
+        from pr_tracker.runner_client import runner_request
+        url = self._get_url()
+        # Fetch both the snapshot and its diff in parallel-ish (sequential for simplicity)
+        snap_resp = runner_request(
+            "GET", url,
+            f"/{self._install_name}/snapshot/{filename}",
+            timeout=15,
+        )
+        if not snap_resp.get("ok"):
+            return snap_resp
+        diff_resp = runner_request(
+            "GET", url,
+            f"/{self._install_name}/snapshot/{filename}/diff",
+            timeout=30,
+        )
+        return {
+            "ok": True,
+            "filename": snap_resp.get("filename", filename),
+            "snapshot": snap_resp.get("snapshot", {}),
+            "diff": diff_resp.get("diff", {}) if diff_resp.get("ok") else {},
+        }
+
+    def _render_detail(self, snapshot: dict, diff: dict, filename: str) -> None:
+        self._view = "detail"
+        parts: list[str] = []
+
+        label = snapshot.get("label", "")
+        created = _format_timestamp(snapshot.get("createdAt", "?"))
+        trigger = snapshot.get("trigger", "?")
+        title = label or filename
+
+        parts.append(f"[bold]━━ Snapshot — {escape(title)} ━━[/bold]\n\n")
+        parts.append(f"  Created: [bold]{created}[/bold]  ·  Trigger: {escape(trigger)}\n")
+        if label:
+            parts.append(f"  Label: [cyan]{escape(label)}[/cyan]\n")
+        parts.append(f"  File: [dim]{escape(filename)}[/dim]\n\n")
+
+        # ComfyUI info
+        comfyui = snapshot.get("comfyui", {})
+        if comfyui:
+            ref = comfyui.get("ref", "?")
+            commit = str(comfyui.get("commit", "?"))[:8]
+            parts.append(f"[bold]ComfyUI[/bold]\n")
+            parts.append(f"  {escape(str(ref))}  ({escape(commit)})\n\n")
+
+        # Custom nodes
+        nodes = snapshot.get("customNodes", [])
+        parts.append(f"[bold]Custom Nodes[/bold]  ({len(nodes)})\n")
+        if nodes:
+            for node in nodes:
+                nid = escape(node.get("id", "?"))
+                ver = escape(str(node.get("version", "?")))
+                enabled = node.get("enabled", True)
+                status = "" if enabled else "  [dim](disabled)[/dim]"
+                parts.append(f"  {nid} ({ver}){status}\n")
+        else:
+            parts.append("  [dim]None[/dim]\n")
+        parts.append("\n")
+
+        # Pip packages
+        pips = snapshot.get("pipPackages", {})
+        parts.append(f"[bold]Pip Packages[/bold]  ({len(pips)})\n")
+        if pips:
+            for pkg_name, pkg_ver in sorted(pips.items()):
+                parts.append(f"  {escape(pkg_name)} ({escape(str(pkg_ver))})\n")
+        else:
+            parts.append("  [dim]None[/dim]\n")
+        parts.append("\n")
+
+        # Diff summary vs current
+        if diff:
+            has_changes = bool(
+                diff.get("comfyuiChanged")
+                or diff.get("nodesAdded") or diff.get("nodesRemoved") or diff.get("nodesChanged")
+                or diff.get("pipsAdded") or diff.get("pipsRemoved") or diff.get("pipsChanged")
+            )
+            if has_changes:
+                parts.append("[bold]Differences vs Current[/bold]\n")
+                if diff.get("comfyuiChanged"):
+                    cu = diff.get("comfyui", {})
+                    parts.append(
+                        f"  ComfyUI: [red]{escape(str(cu.get('from', {}).get('ref', '?')))}[/red]"
+                        f" → [green]{escape(str(cu.get('to', {}).get('ref', '?')))}[/green]\n"
+                    )
+                n_add = len(diff.get("nodesAdded", []))
+                n_rm = len(diff.get("nodesRemoved", []))
+                n_chg = len(diff.get("nodesChanged", []))
+                if n_add or n_rm or n_chg:
+                    node_parts = []
+                    if n_add: node_parts.append(f"[green]+{n_add}[/green]")
+                    if n_rm: node_parts.append(f"[red]-{n_rm}[/red]")
+                    if n_chg: node_parts.append(f"[yellow]~{n_chg}[/yellow]")
+                    parts.append(f"  Nodes: {' '.join(node_parts)}\n")
+                p_add = len(diff.get("pipsAdded", []))
+                p_rm = len(diff.get("pipsRemoved", []))
+                p_chg = len(diff.get("pipsChanged", []))
+                if p_add or p_rm or p_chg:
+                    pip_parts = []
+                    if p_add: pip_parts.append(f"[green]+{p_add}[/green]")
+                    if p_rm: pip_parts.append(f"[red]-{p_rm}[/red]")
+                    if p_chg: pip_parts.append(f"[yellow]~{p_chg}[/yellow]")
+                    parts.append(f"  Pip: {' '.join(pip_parts)}\n")
+                parts.append("\n")
+            else:
+                parts.append("[dim]Current state matches this snapshot.[/dim]\n\n")
+
+        parts.append("[dim]Escape/q: back  ·  d: full diff  ·  R: restore[/dim]\n")
+        self._set_text("".join(parts))
 
     def action_view_diff(self) -> None:
         if not self._items:
@@ -365,7 +502,7 @@ class SnapshotScreen(Screen):
         return resp
 
     def action_close(self) -> None:
-        if self._view == "diff":
+        if self._view in ("diff", "detail"):
             self._render_list()
             return
         self.app.pop_screen()
