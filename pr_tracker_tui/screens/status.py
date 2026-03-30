@@ -260,6 +260,32 @@ class StatusScreen(Screen):
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         worker_name = event.worker.name or ""
+        if worker_name == "submit-models":
+            if event.state == WorkerState.ERROR:
+                self.notify(f"✗ Models error: {event.worker.error}", severity="error", timeout=5)
+                return
+            if event.state != WorkerState.SUCCESS:
+                return
+            result = event.worker.result or {}
+            server_url = getattr(self, "_models_server_url", "")
+            if not result.get("ok"):
+                self.notify(f"✗ Models: {result.get('error', '?')}", severity="warning", timeout=5)
+                return
+            job_id = result.get("job_id")
+            if not job_id:
+                total = result.get("total", 0)
+                missing = result.get("missing", 0)
+                if total and missing == 0:
+                    msg = f"✓ All {total} model(s) already present"
+                else:
+                    msg = "✓ Model downloads complete"
+                self.notify(msg, timeout=5)
+                return
+            from .job_progress import JobProgressScreen
+            self.app.push_screen(
+                JobProgressScreen(job_id, server_url, label="Model Downloads"),
+            )
+            return
         if worker_name not in ("status_fetch_local", "status_fetch_remote"):
             return
         if event.state == WorkerState.SUCCESS:
@@ -1208,48 +1234,19 @@ class StatusScreen(Screen):
         api_path = f"/{name}/workflow-models"
         self.notify(f"Submitting workflow models for {name}…")
 
-        import threading
+        self._models_server_url = server_url
+        self.run_worker(
+            lambda: self._do_submit_models(server_url, api_path, workflow),
+            thread=True,
+            name="submit-models",
+        )
 
-        def _run() -> None:
-            try:
-                from pr_tracker.runner_client import runner_request
-                result = runner_request(
-                    "POST", server_url, api_path,
-                    json_body={"workflow": workflow},
-                )
-                if not result.get("ok"):
-                    self.call_from_thread(
-                        self.notify,
-                        f"✗ Models: {result.get('error', '?')}",
-                        severity="warning", timeout=5,
-                    )
-                    return
-
-                job_id = result.get("job_id")
-                if not job_id:
-                    total = result.get("total", 0)
-                    missing = result.get("missing", 0)
-                    if total and missing == 0:
-                        msg = f"✓ All {total} model(s) already present"
-                    else:
-                        msg = "✓ Model downloads complete"
-                    self.call_from_thread(self.notify, msg, timeout=5)
-                    return
-
-                from .job_progress import JobProgressScreen
-                self.call_from_thread(
-                    self.app.push_screen,
-                    JobProgressScreen(
-                        job_id, server_url, label="Model Downloads",
-                    ),
-                )
-            except Exception as e:
-                self.call_from_thread(
-                    self.notify, f"✗ Models error: {e}",
-                    severity="error", timeout=5,
-                )
-
-        threading.Thread(target=_run, daemon=True).start()
+    def _do_submit_models(self, server_url: str, api_path: str, workflow: dict) -> dict:
+        from pr_tracker.runner_client import runner_request
+        return runner_request(
+            "POST", server_url, api_path,
+            json_body={"workflow": workflow},
+        )
 
     def action_close(self) -> None:
         if self._models_editing:

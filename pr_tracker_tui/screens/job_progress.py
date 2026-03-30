@@ -5,9 +5,8 @@ from __future__ import annotations
 from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Footer, Static
+from textual.widgets import Footer, RichLog, Static
 from textual.worker import WorkerState
 
 
@@ -39,10 +38,12 @@ class JobProgressScreen(Screen):
         self._follow: bool = True
         self._polling: bool = False
         self._timer = None
+        self._rendered_count: int = 0
+        self._status_written: bool = False
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="job-scroll"):
-            yield Static("[dim]Starting…[/dim]", id="job-text")
+        yield Static("", id="job-header")
+        yield RichLog(id="job-log", highlight=False, markup=True, auto_scroll=True)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -65,7 +66,18 @@ class JobProgressScreen(Screen):
         )
 
     def on_worker_state_changed(self, event) -> None:
-        if (event.worker.name or "") != "poll":
+        name = event.worker.name or ""
+        if name == "cancel":
+            if event.state == WorkerState.SUCCESS:
+                data = event.worker.result or {}
+                if data.get("ok"):
+                    self.notify("Cancel requested")
+                else:
+                    self.notify(f"Cancel failed: {data.get('error', '?')}", severity="warning")
+            elif event.state == WorkerState.ERROR:
+                self.notify(f"Cancel failed: {event.worker.error}", severity="warning")
+            return
+        if name != "poll":
             return
         self._polling = False
         if event.state != WorkerState.SUCCESS:
@@ -91,51 +103,49 @@ class JobProgressScreen(Screen):
 
     def _render(self) -> None:
         status_icon = {
-            "running": "⏳",
-            "pending": "⏳",
-            "done": "✓",
-            "error": "✗",
-            "cancelled": "⊘",
+            "running": "⏳", "pending": "⏳", "done": "✓",
+            "error": "✗", "cancelled": "⊘",
         }.get(self._status, "?")
 
-        parts: list[str] = [
+        header = (
             f"[bold]━━ {escape(self._label)} ━━[/bold]"
             f"  {status_icon} {self._status}"
             f"  [dim]({len(self._lines)} lines"
-            f"{' · following' if self._follow else ''})[/dim]\n\n",
-        ]
-
-        for line in self._lines:
-            parts.append(escape(line.rstrip("\n")) + "\n")
-
-        if self._status == "error" and self._error:
-            parts.append(f"\n[red bold]Error: {escape(self._error)}[/red bold]\n")
-        elif self._status == "done":
-            parts.append("\n[green bold]Done.[/green bold]\n")
-        elif self._status == "cancelled":
-            parts.append("\n[yellow]Cancelled.[/yellow]\n")
-
-        parts.append(
-            "\n[dim]c: cancel  ·  f: toggle follow  ·  q: back[/dim]\n"
+            f"{' · following' if self._follow else ''})[/dim]"
         )
-        self.query_one("#job-text", Static).update("".join(parts))
+        self.query_one("#job-header", Static).update(header)
 
-        if self._follow:
-            scroll = self.query_one("#job-scroll", VerticalScroll)
-            scroll.scroll_end(animate=False)
+        log = self.query_one("#job-log", RichLog)
+        for line in self._lines[self._rendered_count:]:
+            log.write(escape(line.rstrip("\n")))
+        self._rendered_count = len(self._lines)
+
+        if self._status in ("done", "error", "cancelled") and not self._status_written:
+            self._status_written = True
+            if self._status == "error" and self._error:
+                log.write(f"\n[red bold]Error: {escape(self._error)}[/red bold]")
+            elif self._status == "done":
+                log.write("\n[green bold]Done.[/green bold]")
+            elif self._status == "cancelled":
+                log.write("\n[yellow]Cancelled.[/yellow]")
+            log.write("\n[dim]q: back[/dim]")
 
     def action_toggle_follow(self) -> None:
         self._follow = not self._follow
+        log = self.query_one("#job-log", RichLog)
+        log.auto_scroll = self._follow
         status = "on" if self._follow else "off"
         self.notify(f"Follow: {status}")
         self._render()
 
     def action_scroll_up(self) -> None:
         self._follow = False
-        self.query_one("#job-scroll", VerticalScroll).scroll_up()
+        log = self.query_one("#job-log", RichLog)
+        log.auto_scroll = False
+        log.scroll_up()
 
     def action_scroll_down(self) -> None:
-        self.query_one("#job-scroll", VerticalScroll).scroll_down()
+        self.query_one("#job-log", RichLog).scroll_down()
 
     def action_cancel_job(self) -> None:
         if self._status not in ("running", "pending"):
