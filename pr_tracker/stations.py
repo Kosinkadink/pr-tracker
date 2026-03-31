@@ -72,7 +72,9 @@ def _stations_dir() -> Path:
 
 
 def _stations_file() -> Path:
-    return ROOT / "config" / "stations.json"
+    config = load_tracker_config()
+    default = str(ROOT / "config" / "stations.json")
+    return Path(config.get("stations_file", default))
 
 
 def _load_stations_data() -> dict:
