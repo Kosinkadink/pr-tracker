@@ -48,6 +48,8 @@ class StatusScreen(Screen):
         Binding("A", "edit_args", "Edit Args"),
         Binding("U", "configure_url", "Add Server"),
         Binding("Y", "remove_server", "Rm Server"),
+        Binding("P", "pod_stop", "Pod Stop"),
+        Binding("!", "pod_terminate", "Pod Kill", show=False),
         Binding("enter", "view_deploy", "View", show=False),
         Binding("w", "open_wt", "Terminal"),
         Binding("up,k", "cursor_up", "Up", show=False),
@@ -973,6 +975,78 @@ class StatusScreen(Screen):
         self.app._save_remote_deploys()
         self.notify(f"Removed server '{srv_name}'")
         self._fetch_status()
+
+    # ── RunPod pod lifecycle ──
+
+    @staticmethod
+    def _runpod_pod_id_from_url(url: str) -> str | None:
+        """Extract a RunPod pod ID from a proxy URL, or return None."""
+        import re
+        m = re.match(r"https://([a-z0-9]+)-9189\.proxy\.runpod\.net", url)
+        return m.group(1) if m else None
+
+    def _get_selected_runpod(self) -> tuple[_Item | None, str | None]:
+        """Return (selected_item, pod_id) if the selection is a RunPod server."""
+        item = self._get_selected()
+        if not item or item.kind not in ("remote", "server"):
+            return None, None
+        pod_id = self._runpod_pod_id_from_url(item.server_url)
+        return item, pod_id
+
+    def action_pod_stop(self) -> None:
+        """Stop the RunPod pod (pause billing)."""
+        item, pod_id = self._get_selected_runpod()
+        if not pod_id:
+            self.notify("Select a RunPod remote server", severity="warning")
+            return
+        self.notify(f"Stopping pod {pod_id[:12]}…")
+        self._pod_action_background(pod_id, "stop", item.server_label)
+
+    def action_pod_terminate(self) -> None:
+        """Terminate the RunPod pod (permanently delete)."""
+        item, pod_id = self._get_selected_runpod()
+        if not pod_id:
+            self.notify("Select a RunPod remote server", severity="warning")
+            return
+        from .confirm import ConfirmScreen
+        self.app.push_screen(
+            ConfirmScreen(f"Terminate pod {pod_id[:12]}? This is permanent."),
+            callback=lambda ok: self._do_pod_terminate(ok, pod_id, item.server_label),
+        )
+
+    def _do_pod_terminate(self, confirmed: bool, pod_id: str, label: str) -> None:
+        if confirmed:
+            self.notify(f"Terminating pod {pod_id[:12]}…")
+            self._pod_action_background(pod_id, "terminate", label)
+
+    def _pod_action_background(self, pod_id: str, action: str, server_label: str) -> None:
+        import threading
+
+        def _run() -> None:
+            try:
+                from comfy_runner.hosted.runpod_provider import RunPodProvider
+                provider = RunPodProvider()
+                if action == "stop":
+                    provider.stop_pod(pod_id)
+                elif action == "terminate":
+                    provider.terminate_pod(pod_id)
+                    # Clean up pod record
+                    from comfy_runner.hosted.config import list_pod_records, remove_pod_record
+                    for pname, prec in list_pod_records("runpod").items():
+                        if prec.get("id") == pod_id:
+                            remove_pod_record("runpod", pname)
+                            break
+                label_str = "stopped" if action == "stop" else "terminated"
+                self.call_from_thread(
+                    self.notify, f"✓ Pod {label_str}", timeout=5
+                )
+                self.call_from_thread(self._fetch_status)
+            except Exception as e:
+                self.call_from_thread(
+                    self.notify, f"✗ Pod {action} failed: {e}", severity="error", timeout=5
+                )
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _remove_local_install(self, name: str) -> None:
         """Remove a local installation (config only, files stay on disk)."""
