@@ -222,6 +222,31 @@ def cmd_repo(args: argparse.Namespace) -> None:
             console.print(f"  {r}")
 
 
+def _resolve_runpod_url(pod_name: str) -> tuple[str, str]:
+    """Look up a RunPod pod by name and return (name, proxy_url).
+
+    Reads the pod registry from comfy-runner's config to find the pod ID,
+    then constructs the RunPod proxy URL for port 9189.
+
+    Raises ``RuntimeError`` if the pod is not found.
+    """
+    from comfy_runner.hosted.config import get_provider_config
+
+    pods = get_provider_config("runpod").get("pods", {})
+    record = pods.get(pod_name)
+    if not record:
+        available = ", ".join(pods.keys()) if pods else "(none)"
+        raise RuntimeError(
+            f"Pod '{pod_name}' not found in comfy-runner config. "
+            f"Available: {available}"
+        )
+    pod_id = record.get("id", "")
+    if not pod_id:
+        raise RuntimeError(f"Pod '{pod_name}' has no ID in config")
+    url = f"https://{pod_id}-9189.proxy.runpod.net"
+    return pod_name, url
+
+
 def cmd_server(args: argparse.Namespace) -> None:
     """Manage runner server entries in pr-tracker config."""
     from .config import load_runner_servers, save_runner_servers
@@ -237,20 +262,31 @@ def cmd_server(args: argparse.Namespace) -> None:
             console.print(f"  [bold]{s['name']}[/bold]  {s['url']}")
 
     elif action == "add":
+        runpod = getattr(args, "runpod", None)
         raw = args.entry
-        if not raw:
-            console.print("[red]Usage: pr_tracker server add name=https://host.ts.net[/red]")
-            return
-        if "=" in raw and not raw.startswith(("http://", "https://")):
-            name, url = raw.split("=", 1)
-            name = name.strip()
-            url = url.strip()
+
+        if runpod:
+            # Resolve RunPod pod name → proxy URL
+            try:
+                name, url = _resolve_runpod_url(runpod)
+            except RuntimeError as e:
+                console.print(f"[red]{e}[/red]")
+                return
+        elif raw:
+            if "=" in raw and not raw.startswith(("http://", "https://")):
+                name, url = raw.split("=", 1)
+                name = name.strip()
+                url = url.strip()
+            else:
+                url = raw
+                name = ""
+            if not url.startswith(("http://", "https://")):
+                console.print("[red]URL must start with http:// or https://[/red]")
+                return
         else:
-            url = raw
-            name = ""
-        if not url.startswith(("http://", "https://")):
-            console.print("[red]URL must start with http:// or https://[/red]")
+            console.print("[red]Usage: server add name=https://host:port  or  server add --runpod <pod_name>[/red]")
             return
+
         servers = load_runner_servers()
         if not name:
             i = 1
@@ -332,6 +368,7 @@ def main(argv: list[str] | None = None) -> None:
     p_server = sub.add_parser("server", help="Manage runner server entries")
     p_server.add_argument("action", choices=["add", "rm", "list"])
     p_server.add_argument("entry", nargs="?", help="name=url (add) or name (rm)")
+    p_server.add_argument("--runpod", metavar="POD", help="Add a RunPod pod by name (resolves proxy URL from comfy-runner config)")
     p_server.set_defaults(func=cmd_server)
 
     # Deploy to comfy-runner server

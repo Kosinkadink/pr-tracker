@@ -1044,7 +1044,7 @@ class StatusScreen(Screen):
             detail.focus()
         else:
             url_input.value = ""
-            url_input.placeholder = "Add server: name=http://host:port  (or just URL)"
+            url_input.placeholder = "Add server: name=http://host:port  or  runpod:<pod_name>"
             url_input.display = True
             url_input.focus()
             self._url_editing = True
@@ -1063,8 +1063,20 @@ class StatusScreen(Screen):
         if not raw:
             self.notify("Input cannot be empty", severity="warning")
             return
+        # Shorthand: "runpod:pod_name" resolves proxy URL from comfy-runner config
+        if raw.startswith("runpod:"):
+            pod_name = raw[7:].strip()
+            if not pod_name:
+                self.notify("Usage: runpod:<pod_name>", severity="warning")
+                return
+            try:
+                from pr_tracker.cli import _resolve_runpod_url
+                name, url = _resolve_runpod_url(pod_name)
+            except RuntimeError as e:
+                self.notify(str(e), severity="error")
+                return
         # Parse name=url or just url
-        if "=" in raw and not raw.startswith(("http://", "https://")):
+        elif "=" in raw and not raw.startswith(("http://", "https://")):
             name, url = raw.split("=", 1)
             name = name.strip()
             url = url.strip()
