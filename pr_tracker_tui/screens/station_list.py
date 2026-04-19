@@ -97,8 +97,13 @@ class StationListScreen(Screen):
         old_cursor = table.cursor_row
         table.clear()
 
-        # Registered stations
-        stations = list_stations()
+        # Registered stations (exclude IDs that have active creation jobs
+        # to avoid duplicate rows — the job row shows creation progress)
+        active_job_ids = {
+            job.station_id for job in self.app.creation_jobs
+            if not job.done and job.station_id is not None
+        }
+        stations = [s for s in list_stations() if s.get("id") not in active_job_ids]
         for s in stations:
             repo = s.get("repo") or "-"
             if "/" in repo:
@@ -210,7 +215,10 @@ class StationListScreen(Screen):
             self.notify("No completed station selected")
             return
 
-        # If station has no PR/issue and no name, prompt for a name first
+        # Start activation immediately in background
+        self._do_open_wt(station)
+
+        # If station has no PR/issue and no name, prompt for a name in parallel
         if (
             not station.get("pr_number")
             and not station.get("issue_number")
@@ -222,12 +230,9 @@ class StationListScreen(Screen):
                 if name:
                     from pr_tracker.stations import update_station
                     update_station(station["id"], title=name)
-                    station["title"] = name
-                self._do_open_wt(station)
+                    self._refresh_table()
 
             self.app.push_screen(StationNameScreen(), callback=_on_name)
-        else:
-            self._do_open_wt(station)
 
     def _do_open_wt(self, station: dict) -> None:
         """Activate and open terminal for station."""
@@ -245,6 +250,11 @@ class StationListScreen(Screen):
 
     def action_switch_to(self) -> None:
         """Switch the current tmux client to the selected station (in-place)."""
+        import sys
+        if sys.platform == "win32":
+            self.notify("Switch-client not supported on Windows (psmux) — use 'w' instead", severity="warning")
+            return
+
         station = self._selected_station()
         if not station:
             self.notify("No completed station selected")
@@ -316,11 +326,18 @@ class StationListScreen(Screen):
         if station.get("status") == "idle":
             self.notify(f"Station {station['id']} is already idle")
             return
-        from pr_tracker.stations import cleanup_station
         sid = station["id"]
-        cleanup_station(sid)
-        self.notify(f"Station {sid} released (idle, available for reuse)")
-        self._refresh_table()
+        self.notify(f"Releasing station {sid}…")
+
+        def _do_release() -> None:
+            from pr_tracker.stations import cleanup_station
+            cleanup_station(sid)
+            self.app.call_from_thread(
+                self.notify, f"Station {sid} released (idle, available for reuse)"
+            )
+            self.app.call_from_thread(self._refresh_table)
+
+        self.run_worker(_do_release, thread=True)
 
     def action_destroy(self) -> None:
         """Delete a station — remove directory and unregister."""
@@ -337,19 +354,41 @@ class StationListScreen(Screen):
         )
 
     def _do_destroy(self, sid: int, path: str) -> None:
-        import shutil
-        from pr_tracker.stations import delete_station
-        if path:
+        self.notify(f"Deleting station {sid}…")
+
+        def _run_destroy() -> None:
+            import shutil
+            import stat
+            from pr_tracker.stations import delete_station
+
+            def _force_remove_readonly(func, fpath, _exc_info):
+                """Handle read-only files (e.g. .git/objects/pack on Windows)."""
+                import os
+                os.chmod(fpath, stat.S_IWRITE)
+                func(fpath)
+
+            # Kill tmux session first — a running session can hold file locks
             try:
-                shutil.rmtree(path)
-            except Exception as e:
-                self.notify(f"Failed to delete directory: {e}", severity="error")
-                return
-        if delete_station(sid):
-            self.notify(f"Station {sid} deleted")
-            self._refresh_table()
-        else:
-            self.notify(f"Station {sid} not found")
+                from pr_tracker.tmux_sessions import kill_station_session
+                kill_station_session(sid)
+            except Exception:
+                pass
+
+            if path:
+                try:
+                    shutil.rmtree(path, onerror=_force_remove_readonly)
+                except Exception as e:
+                    self.app.call_from_thread(
+                        self.notify, f"Failed to delete directory: {e}", severity="error",
+                    )
+                    return
+            if delete_station(sid):
+                self.app.call_from_thread(self.notify, f"Station {sid} deleted")
+                self.app.call_from_thread(self._refresh_table)
+            else:
+                self.app.call_from_thread(self.notify, f"Station {sid} not found")
+
+        self.run_worker(_run_destroy, thread=True)
 
     def action_followup(self) -> None:
         """Send a follow-up prompt to the selected station's amp window."""
