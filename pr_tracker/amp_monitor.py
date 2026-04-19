@@ -5,15 +5,16 @@ or working (actively processing), and tracks how long it's been in
 that state.  Used to surface activity status in the TUI and catch
 stuck agents.
 
-Detection logic:
+Detection logic uses content-change comparison:
   - ``skills`` present in capture-pane output → amp is running
-  - Last ~6 lines contain ``╰`` (input box bottom border) → **idle**
-  - ``skills`` present but no ``╰`` in last lines → **working**
+  - Pane content changed since last poll → **working**
+  - Pane content unchanged since last poll → **idle**
   - capture-pane fails or no ``skills`` → **offline**
 """
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from dataclasses import dataclass, field
@@ -51,25 +52,15 @@ def _monitor_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Single-station probe
+# Single-station capture
 # ---------------------------------------------------------------------------
 
-def probe_amp_status(
-    session_name: str,
-    window: str | int = "amp",
-    station_path: str = "",
-) -> str:
-    """Probe a single amp window and return its state string.
-
-    *station_path* is the station's working directory — used to detect
-    the input box footer (which always shows the cwd).
-
-    Returns ``"idle"``, ``"working"``, or ``"offline"``.
-    """
+def _capture_amp_pane(session_name: str, window: str | int = "amp") -> str | None:
+    """Capture the amp pane content.  Returns output string or None if offline."""
     from .tmux_sessions import _run_tmux, has_session
 
     if not has_session(session_name):
-        return "offline"
+        return None
 
     target = f"{session_name}:{window}"
     result = _run_tmux(
@@ -77,32 +68,18 @@ def probe_amp_status(
         check=False,
     )
     if result.returncode != 0:
-        return "offline"
+        return None
 
     output = result.stdout
     if "skills" not in output:
-        return "offline"
+        return None
 
-    # Detect idle state by looking for amp's input box in the last
-    # ~8 lines.  The input box bottom border shows the station's
-    # working directory path, which is unique and encoding-safe.
-    #
-    # We can't match box-drawing chars (╰╯) directly because psmux
-    # capture-pane double-encodes UTF-8, garbling them.  But the
-    # path string survives intact.
-    lines = output.rstrip("\n").split("\n")
-    tail = lines[-8:] if len(lines) >= 8 else lines
+    return output
 
-    # Normalize path separators and case for matching
-    if station_path:
-        # The footer shows forward slashes regardless of OS,
-        # and may use different casing than the stored path.
-        match_path = station_path.replace("\\", "/").lower()
-        for line in tail:
-            if match_path in line.lower():
-                return "idle"
 
-    return "working"
+def _content_hash(output: str) -> str:
+    """Return a fast hash of the pane content for change detection."""
+    return hashlib.md5(output.encode("utf-8", errors="replace")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +88,9 @@ def probe_amp_status(
 
 class AmpMonitor:
     """Background thread that polls all active stations' amp windows.
+
+    Detection uses content-change comparison: if the pane content changed
+    since the last poll, amp is working.  If stable, amp is idle.
 
     Usage::
 
@@ -124,6 +104,7 @@ class AmpMonitor:
 
     def __init__(self) -> None:
         self._statuses: dict[int, AmpStatus] = {}
+        self._prev_hashes: dict[int, str] = {}
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -164,9 +145,8 @@ class AmpMonitor:
             self._stop_event.wait(timeout=cfg["poll_interval"])
 
     def _poll_all(self) -> None:
-        """Poll all active stations with tmux sessions."""
+        """Poll all active stations."""
         from .stations import list_stations
-
         from .tmux_sessions import session_name_for_station
 
         stations = list_stations()
@@ -180,14 +160,26 @@ class AmpMonitor:
         for s in active:
             sid = s["id"]
             session_name = s.get("tmux_session") or session_name_for_station(sid)
-            new_state = probe_amp_status(
-                session_name, station_path=s.get("path", ""),
-            )
+
+            output = _capture_amp_pane(session_name)
+            if output is None:
+                new_state = "offline"
+            else:
+                current_hash = _content_hash(output)
+                prev_hash = self._prev_hashes.get(sid)
+                self._prev_hashes[sid] = current_hash
+
+                if prev_hash is None:
+                    # First poll — can't determine yet, assume idle
+                    new_state = "idle"
+                elif current_hash != prev_hash:
+                    new_state = "working"
+                else:
+                    new_state = "idle"
 
             with self._lock:
                 old = self._statuses.get(sid)
                 if old is None or old.state != new_state:
-                    # State changed — reset timestamp
                     self._statuses[sid] = AmpStatus(
                         state=new_state, since=now, last_checked=now,
                     )
@@ -200,3 +192,6 @@ class AmpMonitor:
             for sid in list(self._statuses):
                 if sid not in active_ids:
                     del self._statuses[sid]
+        for sid in list(self._prev_hashes):
+            if sid not in active_ids:
+                del self._prev_hashes[sid]

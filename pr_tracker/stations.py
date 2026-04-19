@@ -847,7 +847,8 @@ def activate_station(
     # Pull latest on all branches
     failed = pull_all_branches(station_id, on_progress=on_progress)
 
-    update_station(station_id, last_used=_now_iso(), status="active")
+    update_station(station_id, last_used=_now_iso(), status="active",
+                   tmux_session=f"station{station_id}")
     result = get_station(station_id) or station
     if failed:
         result["pull_failures"] = failed
