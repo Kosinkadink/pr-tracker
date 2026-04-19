@@ -54,8 +54,15 @@ def _monitor_config() -> dict:
 # Single-station probe
 # ---------------------------------------------------------------------------
 
-def probe_amp_status(session_name: str, window: str | int = "amp") -> str:
+def probe_amp_status(
+    session_name: str,
+    window: str | int = "amp",
+    station_path: str = "",
+) -> str:
     """Probe a single amp window and return its state string.
+
+    *station_path* is the station's working directory — used to detect
+    the input box footer (which always shows the cwd).
 
     Returns ``"idle"``, ``"working"``, or ``"offline"``.
     """
@@ -76,15 +83,24 @@ def probe_amp_status(session_name: str, window: str | int = "amp") -> str:
     if "skills" not in output:
         return "offline"
 
-    # Check the last ~6 lines for the input box bottom border.
-    # When amp is idle, the input box (╭...╮ / ╰...╯) is visible
-    # at the bottom of the pane.  When working, streaming output
-    # pushes it away.
+    # Detect idle state by looking for amp's input box in the last
+    # ~8 lines.  The input box bottom border shows the station's
+    # working directory path, which is unique and encoding-safe.
+    #
+    # We can't match box-drawing chars (╰╯) directly because psmux
+    # capture-pane double-encodes UTF-8, garbling them.  But the
+    # path string survives intact.
     lines = output.rstrip("\n").split("\n")
-    tail = lines[-6:] if len(lines) >= 6 else lines
-    tail_text = "\n".join(tail)
-    if "╰" in tail_text:
-        return "idle"
+    tail = lines[-8:] if len(lines) >= 8 else lines
+
+    # Normalize path separators for matching
+    if station_path:
+        # The footer shows forward slashes regardless of OS
+        match_path = station_path.replace("\\", "/")
+        for line in tail:
+            if match_path in line:
+                return "idle"
+
     return "working"
 
 
@@ -161,7 +177,9 @@ class AmpMonitor:
         for s in active:
             sid = s["id"]
             session_name = s["tmux_session"]
-            new_state = probe_amp_status(session_name)
+            new_state = probe_amp_status(
+                session_name, station_path=s.get("path", ""),
+            )
 
             with self._lock:
                 old = self._statuses.get(sid)
