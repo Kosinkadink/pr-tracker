@@ -9,7 +9,45 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
 
-COL_KEYS = ["id", "repo", "ref", "status", "last_used", "path"]
+COL_KEYS = ["id", "repo", "ref", "status", "amp", "last_used", "path"]
+
+
+def _amp_status_cell(app, station: dict) -> Text:
+    """Build a Rich Text cell showing amp activity status for a station."""
+    import time
+
+    sid = station.get("id")
+    if not sid or station.get("status") != "active":
+        return Text("—", style="dim")
+
+    status = app.amp_monitor.get_status(sid)
+    if status.state == "unknown":
+        return Text("…", style="dim")
+
+    elapsed = time.monotonic() - status.since if status.since else 0
+    mins = int(elapsed // 60)
+    if mins >= 60:
+        duration = f"{mins // 60}h{mins % 60}m"
+    elif mins > 0:
+        duration = f"{mins}m"
+    else:
+        duration = f"{int(elapsed)}s"
+
+    if status.state == "idle":
+        return Text(f"● idle {duration}", style="green")
+    elif status.state == "working":
+        from pr_tracker.amp_monitor import _monitor_config
+        cfg = _monitor_config()
+        warn_mins = cfg["working_warn_minutes"]
+        alert_mins = cfg["working_alert_minutes"]
+        if mins >= alert_mins:
+            return Text(f"● working {duration}", style="red bold")
+        elif mins >= warn_mins:
+            return Text(f"● working {duration}", style="yellow")
+        else:
+            return Text(f"● working {duration}", style="cyan")
+    else:
+        return Text("○ offline", style="dim")
 
 
 class StationListScreen(Screen):
@@ -42,7 +80,7 @@ class StationListScreen(Screen):
         table.cursor_type = "row"
         table.zebra_stripes = True
         for label, key in zip(
-            ["ID", "Repo", "Ref", "Status", "Last Used", "Path"],
+            ["ID", "Repo", "Ref", "Status", "Amp", "Last Used", "Path"],
             COL_KEYS,
         ):
             table.add_column(label, key=key)
@@ -59,8 +97,13 @@ class StationListScreen(Screen):
         old_cursor = table.cursor_row
         table.clear()
 
-        # Registered stations
-        stations = list_stations()
+        # Registered stations (exclude IDs that have active creation jobs
+        # to avoid duplicate rows — the job row shows creation progress)
+        active_job_ids = {
+            job.station_id for job in self.app.creation_jobs
+            if not job.done and job.station_id is not None
+        }
+        stations = [s for s in list_stations() if s.get("id") not in active_job_ids]
         for s in stations:
             repo = s.get("repo") or "-"
             if "/" in repo:
@@ -69,18 +112,24 @@ class StationListScreen(Screen):
             ref = s.get("ref") or "-"
             pr = s.get("pr_number")
             issue = s.get("issue_number")
+            name = s.get("title") or s.get("name", "")
             if pr:
                 ref = f"PR #{pr}"
             elif issue:
                 ref = f"Issue #{issue}"
+            elif name:
+                ref = name
 
             status = s.get("status", "?")
             if status == "active":
                 status_cell = Text(status, style="green")
             elif status == "preparing":
                 status_cell = Text(status, style="yellow")
+            elif status in ("releasing", "deleting"):
+                status_cell = Text(f"{status}…", style="red")
             else:
                 status_cell = Text(status, style="dim")
+            amp_cell = _amp_status_cell(self.app, s)
             last_used = time_ago(s.get("last_used"))
             path = s.get("path", "?")
 
@@ -89,6 +138,7 @@ class StationListScreen(Screen):
                 repo,
                 ref,
                 status_cell,
+                amp_cell,
                 last_used,
                 path,
                 key=str(s["id"]),
@@ -110,6 +160,7 @@ class StationListScreen(Screen):
                 job.label,
                 "",
                 status_text,
+                "",
                 Text(job.progress_msg, style="dim"),
                 "",
                 key=f"job-{id(job)}",
@@ -166,6 +217,27 @@ class StationListScreen(Screen):
             self.notify("No completed station selected")
             return
 
+        # Start activation immediately in background
+        self._do_open_wt(station)
+
+        # If station has no PR/issue and no name, prompt for a name in parallel
+        if (
+            not station.get("pr_number")
+            and not station.get("issue_number")
+            and not station.get("title")
+        ):
+            from .prompt_preview import StationNameScreen
+
+            def _on_name(name: str | None) -> None:
+                if name:
+                    from pr_tracker.stations import update_station
+                    update_station(station["id"], title=name)
+                    self._refresh_table()
+
+            self.app.push_screen(StationNameScreen(), callback=_on_name)
+
+    def _do_open_wt(self, station: dict) -> None:
+        """Activate and open terminal for station."""
         from .station_activate import activate_and_open_wt
 
         def _on_done(updated: dict) -> None:
@@ -180,6 +252,11 @@ class StationListScreen(Screen):
 
     def action_switch_to(self) -> None:
         """Switch the current tmux client to the selected station (in-place)."""
+        import sys
+        if sys.platform == "win32":
+            self.notify("Switch-client not supported on Windows (psmux) — use 'w' instead", severity="warning")
+            return
+
         station = self._selected_station()
         if not station:
             self.notify("No completed station selected")
@@ -251,11 +328,21 @@ class StationListScreen(Screen):
         if station.get("status") == "idle":
             self.notify(f"Station {station['id']} is already idle")
             return
-        from pr_tracker.stations import cleanup_station
         sid = station["id"]
-        cleanup_station(sid)
-        self.notify(f"Station {sid} released (idle, available for reuse)")
+        from pr_tracker.stations import update_station
+        update_station(sid, status="releasing")
         self._refresh_table()
+        self.notify(f"Releasing station {sid}…")
+
+        def _do_release() -> None:
+            from pr_tracker.stations import cleanup_station
+            cleanup_station(sid)
+            self.app.call_from_thread(
+                self.notify, f"Station {sid} released (idle, available for reuse)"
+            )
+            self.app.call_from_thread(self._refresh_table)
+
+        self.run_worker(_do_release, thread=True)
 
     def action_destroy(self) -> None:
         """Delete a station — remove directory and unregister."""
@@ -272,19 +359,44 @@ class StationListScreen(Screen):
         )
 
     def _do_destroy(self, sid: int, path: str) -> None:
-        import shutil
-        from pr_tracker.stations import delete_station
-        if path:
+        from pr_tracker.stations import update_station
+        update_station(sid, status="deleting")
+        self._refresh_table()
+        self.notify(f"Deleting station {sid}…")
+
+        def _run_destroy() -> None:
+            import shutil
+            import stat
+            from pr_tracker.stations import delete_station
+
+            def _force_remove_readonly(func, fpath, _exc_info):
+                """Handle read-only files (e.g. .git/objects/pack on Windows)."""
+                import os
+                os.chmod(fpath, stat.S_IWRITE)
+                func(fpath)
+
+            # Kill tmux session first — a running session can hold file locks
             try:
-                shutil.rmtree(path)
-            except Exception as e:
-                self.notify(f"Failed to delete directory: {e}", severity="error")
-                return
-        if delete_station(sid):
-            self.notify(f"Station {sid} deleted")
-            self._refresh_table()
-        else:
-            self.notify(f"Station {sid} not found")
+                from pr_tracker.tmux_sessions import kill_station_session
+                kill_station_session(sid)
+            except Exception:
+                pass
+
+            if path:
+                try:
+                    shutil.rmtree(path, onerror=_force_remove_readonly)
+                except Exception as e:
+                    self.app.call_from_thread(
+                        self.notify, f"Failed to delete directory: {e}", severity="error",
+                    )
+                    return
+            if delete_station(sid):
+                self.app.call_from_thread(self.notify, f"Station {sid} deleted")
+                self.app.call_from_thread(self._refresh_table)
+            else:
+                self.app.call_from_thread(self.notify, f"Station {sid} not found")
+
+        self.run_worker(_run_destroy, thread=True)
 
     def action_followup(self) -> None:
         """Send a follow-up prompt to the selected station's amp window."""

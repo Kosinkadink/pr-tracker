@@ -11,11 +11,11 @@ from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from textual.screen import ModalScreen
-from textual.widgets import Footer, Static, TextArea
+from .modal_base import StyledModalScreen
+from textual.widgets import Footer, Input, Static, TextArea
 
 
-class PromptPreviewScreen(ModalScreen[str | None]):
+class PromptPreviewScreen(StyledModalScreen[str | None]):
     """Modal showing the rendered prompt preset with send/edit/skip options.
 
     Dismissed with the (possibly edited) prompt string on send,
@@ -87,7 +87,7 @@ class PromptPreviewScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class IssueFlowScreen(ModalScreen[str | None]):
+class IssueFlowScreen(StyledModalScreen[str | None]):
     """Modal for selecting the issue workflow before showing the prompt.
 
     Presents flow options (investigate+plan vs all-in-one), resolves the
@@ -161,7 +161,7 @@ class IssueFlowScreen(ModalScreen[str | None]):
             self._on_prompt_chosen(None)
 
 
-class FollowUpScreen(ModalScreen[str | None]):
+class FollowUpScreen(StyledModalScreen[str | None]):
     """Modal for selecting a follow-up prompt to send to the station's amp window."""
 
     BINDINGS = [
@@ -208,6 +208,43 @@ class FollowUpScreen(ModalScreen[str | None]):
 
     def action_pick_3(self) -> None:
         self._pick(2)
+
+    def action_skip(self) -> None:
+        self.dismiss(None)
+
+
+class StationNameScreen(StyledModalScreen[str | None]):
+    """Modal for entering a name/purpose for a new station."""
+
+    BINDINGS = [
+        Binding("escape", "skip", "Skip"),
+        Binding("q", "skip", "Skip", show=False),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="prompt-preview-dialog"):
+            yield Static(
+                "[bold]New Station[/bold]\n\n"
+                "[dim]Enter a name or purpose (optional):[/dim]",
+                id="prompt-header",
+            )
+            yield Input(placeholder="e.g. fix auth bug, refactor tests...", id="station-name-input")
+            yield Static(
+                "[bold]Enter[/bold] Create  ·  "
+                "[bold]Esc[/bold] Skip (no name)",
+                id="prompt-actions",
+            )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#station-name-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        name = event.value.strip()
+        self.dismiss(name if name else None)
 
     def action_skip(self) -> None:
         self.dismiss(None)

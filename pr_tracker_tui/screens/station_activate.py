@@ -86,14 +86,14 @@ def _open_tabs_and_notify(screen: Screen, sid: int, on_done=None) -> None:
     if ok:
         screen.app.call_from_thread(screen.notify, f"Opened terminal for station {sid}")
         station = get_station(sid)
-        if station and (is_new or not station.get("prompt_sent")):
-            # Prompt not yet sent — show dialog (don't focus station window,
-            # user needs to interact with the TUI).
+        if station and (is_new or not station.get("prompt_sent")) and _has_prompt_preview(station):
+            # Prompt not yet sent and preset available — show dialog
+            # (don't focus station window, user needs to interact with the TUI).
             screen.app.call_from_thread(
                 _show_prompt_preview, screen, station,
             )
         elif not is_new:
-            # Prompt already sent, existing session — focus the station window.
+            # No prompt dialog needed — focus the existing station window.
             from pr_tracker.tmux_sessions import _focus_existing_terminal, session_name_for_station
             _focus_existing_terminal(session_name_for_station(sid))
     else:
@@ -193,6 +193,14 @@ def _send_prompt_to_amp(screen: Screen, station: dict, prompt: str) -> None:
 
     import threading
     threading.Thread(target=_do_send, daemon=True).start()
+
+
+def _has_prompt_preview(station: dict) -> bool:
+    """Return True if the station has a PR/issue that would show a prompt preview."""
+    return bool(
+        station.get("repo")
+        and (station.get("pr_number") or station.get("issue_number"))
+    )
 
 
 def _show_prompt_preview(screen: Screen, station: dict) -> None:

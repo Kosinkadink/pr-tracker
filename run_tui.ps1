@@ -43,7 +43,7 @@ if ($tmux) {
         # shell closes when the TUI exits, which ends the tmux session.
         & $tmuxBin send-keys -t pr-tracker:tui "& '$python' -m pr_tracker_tui; exit" Enter
 
-        # Apply neutral dark styling (no mouse — it interferes with TUI apps)
+        # Apply neutral dark styling
         & $tmuxBin set -t pr-tracker status-style "bg=#333333,fg=#cccccc" 2>$null
         & $tmuxBin set -t pr-tracker window-status-style "bg=#333333,fg=#888888" 2>$null
         & $tmuxBin set -t pr-tracker window-status-current-style "bg=#555555,fg=#ffffff,bold" 2>$null

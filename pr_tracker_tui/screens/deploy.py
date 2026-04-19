@@ -6,12 +6,12 @@ from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.screen import ModalScreen
+from .modal_base import StyledModalScreen
 from textual.widgets import Footer, Static
 from textual.worker import Worker, WorkerState
 
 
-class DeployScreen(ModalScreen):
+class DeployScreen(StyledModalScreen):
     """Modal for deploying a PR — choose local or remote target."""
 
     BINDINGS = [
@@ -65,7 +65,7 @@ class DeployScreen(ModalScreen):
         self.app.pop_screen()
 
 
-class RemoteDeployScreen(ModalScreen):
+class RemoteDeployScreen(StyledModalScreen):
     """Modal for deploying a PR to the comfy-runner HTTP server.
 
     Fetches available installations on mount and lets the user pick one

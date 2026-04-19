@@ -42,34 +42,16 @@ Screen {
     margin: 1 2;
 }
 
-/* Confirm modal */
-ConfirmScreen {
-    align: center middle;
-    background: rgba(0, 0, 0, 0.6);
-}
-
+/* Confirm modal — smaller dialog */
 #confirm-dialog {
-    width: 40;
-    height: auto;
-    max-height: 8;
-    border: thick $accent;
-    background: $surface;
-    padding: 1 2;
+    width: 50;
+    max-height: 12;
 }
 
 /* Deploy confirmation modal */
-DeployScreen, RemoteDeployScreen {
-    align: center middle;
-    background: rgba(0, 0, 0, 0.6);
-}
-
 #deploy-dialog {
     width: 60;
-    height: auto;
     max-height: 20;
-    border: thick $accent;
-    background: $surface;
-    padding: 1 2;
 }
 
 #deploy-dialog Static {
@@ -82,18 +64,9 @@ DeployScreen, RemoteDeployScreen {
 }
 
 /* Tag modal */
-TagScreen {
-    align: center middle;
-    background: rgba(0, 0, 0, 0.6);
-}
-
 #tag-dialog {
     width: 55;
-    height: auto;
     max-height: 16;
-    border: thick $accent;
-    background: $surface;
-    padding: 1 2;
 }
 
 #tag-dialog Input {
@@ -131,18 +104,9 @@ TagScreen {
 }
 
 /* Prompt preview modals */
-PromptPreviewScreen, IssueFlowScreen, FollowUpScreen {
-    align: center middle;
-    background: rgba(0, 0, 0, 0.6);
-}
-
 #prompt-preview-dialog {
     width: 70;
-    height: auto;
     max-height: 24;
-    border: thick $accent;
-    background: $surface;
-    padding: 1 2;
 }
 
 #prompt-header {

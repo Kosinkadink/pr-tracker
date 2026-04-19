@@ -150,6 +150,13 @@ class PRTrackerApp(App):
         self._shutting_down = False
         import time
         self._remote_sync_time: float = time.time() if self._remote_deploys else 0.0
+        # Amp activity monitor
+        from pr_tracker.amp_monitor import AmpMonitor
+        self._amp_monitor = AmpMonitor()
+
+    @property
+    def amp_monitor(self):
+        return self._amp_monitor
 
     @property
     def creation_jobs(self) -> list[StationCreationJob]:
@@ -208,6 +215,7 @@ class PRTrackerApp(App):
         self.push_screen(RepoSelectScreen())
         self._sync_remote_deploys_tick()
         self.set_interval(5, self._sync_remote_deploys_tick)
+        self._amp_monitor.start()
 
     def _sync_remote_deploys_tick(self) -> None:
         """Periodically sync remote deploy icons with the server."""
@@ -269,6 +277,7 @@ class PRTrackerApp(App):
     def exit(self, *args, **kwargs) -> None:
         """Cancel all running creation threads and stop deploys on exit."""
         self._shutting_down = True
+        self._amp_monitor.stop()
         # Signal all creation jobs to cancel (threads are daemons — no join)
         for job in self._creation_jobs:
             job.cancel_event.set()
@@ -404,6 +413,8 @@ class PRTrackerApp(App):
         elif ref and repo:
             short = repo.split("/", 1)[1] if "/" in repo else repo
             label = f"{short} branch {ref}"
+        elif title:
+            label = title
 
         job = StationCreationJob(
             label=label, repo=repo, pr_number=pr_number, issue_number=issue_number, ref=ref

@@ -5,11 +5,11 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.screen import ModalScreen
+from .modal_base import StyledModalScreen
 from textual.widgets import Footer, Static
 
 
-class ConfirmScreen(ModalScreen[bool]):
+class ConfirmScreen(StyledModalScreen[bool]):
     """Modal that returns True (y) or False (Esc/n)."""
 
     BINDINGS = [
@@ -26,6 +26,9 @@ class ConfirmScreen(ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-dialog"):
             yield Static(self._message)
+            yield Static(
+                "\n[bold]y[/bold] Yes  ·  [bold]n[/bold]/[bold]Esc[/bold] No",
+            )
         yield Footer()
 
     def action_confirm(self) -> None:

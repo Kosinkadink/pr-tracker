@@ -290,8 +290,8 @@ Phase 1 is the foundation. Phases 2 and 4 can be built in parallel on top of it.
 ## Windows psmux Quirks (Resolved)
 
 psmux uses per-session TCP servers with filesystem-based discovery (`~/.psmux/<name>.port`).
-Cross-process operations (`has-session`, `send-keys`, `new-window`, `attach-session`) all work
-via TCP — the original design is fully functional on Windows.
+Cross-process operations (`has-session`, `send-keys`, `new-window`, `attach-session`,
+`switch-client`) all work via TCP — the original design is fully functional on Windows.
 
 ### Quirks discovered and worked around
 

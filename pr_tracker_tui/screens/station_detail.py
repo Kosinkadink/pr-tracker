@@ -12,6 +12,44 @@ from textual.screen import Screen
 from textual.widgets import Footer, Static
 
 
+def _amp_status_line(app, station: dict) -> str:
+    """Return a Rich markup string for amp activity status, or empty string."""
+    import time
+
+    sid = station.get("id")
+    if not sid or station.get("status") != "active":
+        return ""
+
+    status = app.amp_monitor.get_status(sid)
+    if status.state == "unknown":
+        return "[dim]…[/dim]"
+
+    elapsed = time.monotonic() - status.since if status.since else 0
+    mins = int(elapsed // 60)
+    if mins >= 60:
+        duration = f"{mins // 60}h{mins % 60}m"
+    elif mins > 0:
+        duration = f"{mins}m"
+    else:
+        duration = f"{int(elapsed)}s"
+
+    if status.state == "idle":
+        return f"[green]● idle {duration}[/green]"
+    elif status.state == "working":
+        from pr_tracker.amp_monitor import _monitor_config
+        cfg = _monitor_config()
+        warn_mins = cfg["working_warn_minutes"]
+        alert_mins = cfg["working_alert_minutes"]
+        if mins >= alert_mins:
+            return f"[red bold]● working {duration}[/red bold]"
+        elif mins >= warn_mins:
+            return f"[yellow]● working {duration}[/yellow]"
+        else:
+            return f"[cyan]● working {duration}[/cyan]"
+    else:
+        return "[dim]○ offline[/dim]"
+
+
 class StationDetailScreen(Screen):
     """Full-screen station detail view with live progress updates."""
 
@@ -68,11 +106,19 @@ class StationDetailScreen(Screen):
             pr = station.get("pr_number")
             issue = station.get("issue_number")
 
+            title = escape(station.get("title") or "")
+
             ref_label = ref
             if pr:
                 ref_label = f"PR #{pr}"
+                if title:
+                    ref_label += f"  [dim]{title}[/dim]"
             elif issue:
                 ref_label = f"Issue #{issue}"
+                if title:
+                    ref_label += f"  [dim]{title}[/dim]"
+            elif title:
+                ref_label = title
 
             parts.append(
                 f"[bold]Station {sid}[/bold]\n"
@@ -82,6 +128,11 @@ class StationDetailScreen(Screen):
                 f"[bold]Ref:[/bold]      {ref_label}\n"
                 f"[bold]Status:[/bold]   {status}\n"
             )
+
+            # Amp activity status
+            amp_line = _amp_status_line(self.app, station)
+            if amp_line:
+                parts.append(f"[bold]Amp:[/bold]      {amp_line}\n")
 
             created = station.get("created_at", "")
             last_used = station.get("last_used", "")
