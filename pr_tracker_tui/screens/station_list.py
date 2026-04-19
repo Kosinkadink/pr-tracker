@@ -281,16 +281,7 @@ class StationListScreen(Screen):
         self._refresh_table()
 
     def action_create(self) -> None:
-        """Create a new station, optionally with a name."""
-        from .prompt_preview import StationNameScreen
-
-        def _on_name(name: str | None) -> None:
-            self.app.create_station_background(
-                title=name or "",
-                open_wt_on_complete=True,
-            )
-
-        self.app.push_screen(StationNameScreen(), callback=_on_name)
+        self.app.create_station_background()
 
     def action_refresh(self) -> None:
         self._refresh_table()
