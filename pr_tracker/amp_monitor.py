@@ -93,12 +93,13 @@ def probe_amp_status(
     lines = output.rstrip("\n").split("\n")
     tail = lines[-8:] if len(lines) >= 8 else lines
 
-    # Normalize path separators for matching
+    # Normalize path separators and case for matching
     if station_path:
-        # The footer shows forward slashes regardless of OS
-        match_path = station_path.replace("\\", "/")
+        # The footer shows forward slashes regardless of OS,
+        # and may use different casing than the stored path.
+        match_path = station_path.replace("\\", "/").lower()
         for line in tail:
-            if match_path in line:
+            if match_path in line.lower():
                 return "idle"
 
     return "working"
