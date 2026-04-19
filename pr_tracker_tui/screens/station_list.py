@@ -9,7 +9,45 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
 
-COL_KEYS = ["id", "repo", "ref", "status", "last_used", "path"]
+COL_KEYS = ["id", "repo", "ref", "status", "amp", "last_used", "path"]
+
+
+def _amp_status_cell(app, station: dict) -> Text:
+    """Build a Rich Text cell showing amp activity status for a station."""
+    import time
+
+    sid = station.get("id")
+    if not sid or station.get("status") != "active" or not station.get("tmux_session"):
+        return Text("—", style="dim")
+
+    status = app.amp_monitor.get_status(sid)
+    if status.state == "unknown":
+        return Text("…", style="dim")
+
+    elapsed = time.monotonic() - status.since if status.since else 0
+    mins = int(elapsed // 60)
+    if mins >= 60:
+        duration = f"{mins // 60}h{mins % 60}m"
+    elif mins > 0:
+        duration = f"{mins}m"
+    else:
+        duration = f"{int(elapsed)}s"
+
+    if status.state == "idle":
+        return Text(f"● idle {duration}", style="green")
+    elif status.state == "working":
+        from pr_tracker.amp_monitor import _monitor_config
+        cfg = _monitor_config()
+        warn_mins = cfg["working_warn_minutes"]
+        alert_mins = cfg["working_alert_minutes"]
+        if mins >= alert_mins:
+            return Text(f"● working {duration}", style="red bold")
+        elif mins >= warn_mins:
+            return Text(f"● working {duration}", style="yellow")
+        else:
+            return Text(f"● working {duration}", style="cyan")
+    else:
+        return Text("○ offline", style="dim")
 
 
 class StationListScreen(Screen):
@@ -42,7 +80,7 @@ class StationListScreen(Screen):
         table.cursor_type = "row"
         table.zebra_stripes = True
         for label, key in zip(
-            ["ID", "Repo", "Ref", "Status", "Last Used", "Path"],
+            ["ID", "Repo", "Ref", "Status", "Amp", "Last Used", "Path"],
             COL_KEYS,
         ):
             table.add_column(label, key=key)
@@ -81,6 +119,7 @@ class StationListScreen(Screen):
                 status_cell = Text(status, style="yellow")
             else:
                 status_cell = Text(status, style="dim")
+            amp_cell = _amp_status_cell(self.app, s)
             last_used = time_ago(s.get("last_used"))
             path = s.get("path", "?")
 
@@ -89,6 +128,7 @@ class StationListScreen(Screen):
                 repo,
                 ref,
                 status_cell,
+                amp_cell,
                 last_used,
                 path,
                 key=str(s["id"]),
@@ -110,6 +150,7 @@ class StationListScreen(Screen):
                 job.label,
                 "",
                 status_text,
+                "",
                 Text(job.progress_msg, style="dim"),
                 "",
                 key=f"job-{id(job)}",
