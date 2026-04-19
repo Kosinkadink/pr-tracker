@@ -5,11 +5,11 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.screen import ModalScreen
+from .modal_base import StyledModalScreen
 from textual.widgets import Footer, Input, Static
 
 
-class TagScreen(ModalScreen[list[str] | None]):
+class TagScreen(StyledModalScreen[list[str] | None]):
     """Modal for adding/removing tags on a PR."""
 
     BINDINGS = [

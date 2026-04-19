@@ -11,11 +11,11 @@ from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from textual.screen import ModalScreen
+from .modal_base import StyledModalScreen
 from textual.widgets import Footer, Input, Static, TextArea
 
 
-class PromptPreviewScreen(ModalScreen[str | None]):
+class PromptPreviewScreen(StyledModalScreen[str | None]):
     """Modal showing the rendered prompt preset with send/edit/skip options.
 
     Dismissed with the (possibly edited) prompt string on send,
@@ -87,7 +87,7 @@ class PromptPreviewScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class IssueFlowScreen(ModalScreen[str | None]):
+class IssueFlowScreen(StyledModalScreen[str | None]):
     """Modal for selecting the issue workflow before showing the prompt.
 
     Presents flow options (investigate+plan vs all-in-one), resolves the
@@ -161,7 +161,7 @@ class IssueFlowScreen(ModalScreen[str | None]):
             self._on_prompt_chosen(None)
 
 
-class FollowUpScreen(ModalScreen[str | None]):
+class FollowUpScreen(StyledModalScreen[str | None]):
     """Modal for selecting a follow-up prompt to send to the station's amp window."""
 
     BINDINGS = [
@@ -213,7 +213,7 @@ class FollowUpScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class StationNameScreen(ModalScreen[str | None]):
+class StationNameScreen(StyledModalScreen[str | None]):
     """Modal for entering a name/purpose for a new station."""
 
     BINDINGS = [

@@ -106,11 +106,19 @@ class StationDetailScreen(Screen):
             pr = station.get("pr_number")
             issue = station.get("issue_number")
 
+            title = escape(station.get("title") or "")
+
             ref_label = ref
             if pr:
                 ref_label = f"PR #{pr}"
+                if title:
+                    ref_label += f"  [dim]{title}[/dim]"
             elif issue:
                 ref_label = f"Issue #{issue}"
+                if title:
+                    ref_label += f"  [dim]{title}[/dim]"
+            elif title:
+                ref_label = title
 
             parts.append(
                 f"[bold]Station {sid}[/bold]\n"

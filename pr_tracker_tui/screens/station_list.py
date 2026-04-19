@@ -125,6 +125,8 @@ class StationListScreen(Screen):
                 status_cell = Text(status, style="green")
             elif status == "preparing":
                 status_cell = Text(status, style="yellow")
+            elif status in ("releasing", "deleting"):
+                status_cell = Text(f"{status}…", style="red")
             else:
                 status_cell = Text(status, style="dim")
             amp_cell = _amp_status_cell(self.app, s)
@@ -327,6 +329,9 @@ class StationListScreen(Screen):
             self.notify(f"Station {station['id']} is already idle")
             return
         sid = station["id"]
+        from pr_tracker.stations import update_station
+        update_station(sid, status="releasing")
+        self._refresh_table()
         self.notify(f"Releasing station {sid}…")
 
         def _do_release() -> None:
@@ -354,6 +359,9 @@ class StationListScreen(Screen):
         )
 
     def _do_destroy(self, sid: int, path: str) -> None:
+        from pr_tracker.stations import update_station
+        update_station(sid, status="deleting")
+        self._refresh_table()
         self.notify(f"Deleting station {sid}…")
 
         def _run_destroy() -> None:
