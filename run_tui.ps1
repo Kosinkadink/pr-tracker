@@ -44,11 +44,6 @@ if ($tmux) {
         & $tmuxBin send-keys -t pr-tracker:tui "& '$python' -m pr_tracker_tui; exit" Enter
 
         # Apply neutral dark styling
-        # Mouse must be off — psmux intercepts scroll events for its own
-        # copy mode and doesn't pass them through to TUI apps (unlike real
-        # tmux which checks mouse_any_flag).  With mouse off, WT passes
-        # mouse escape sequences directly to Textual.
-        & $tmuxBin set -t pr-tracker mouse off 2>$null
         & $tmuxBin set -t pr-tracker status-style "bg=#333333,fg=#cccccc" 2>$null
         & $tmuxBin set -t pr-tracker window-status-style "bg=#333333,fg=#888888" 2>$null
         & $tmuxBin set -t pr-tracker window-status-current-style "bg=#555555,fg=#ffffff,bold" 2>$null
