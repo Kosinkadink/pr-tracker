@@ -158,8 +158,13 @@ Stations use tmux sessions for terminal management. Pressing `W` on a PR/issue c
 | Key | Action |
 |-----|--------|
 | `w` | Open terminal for selected station (creates tmux session if needed) |
-| `W` | Switch tmux client to selected station (single-monitor, in-place) |
+| `W` | Switch tmux client to selected station (Linux/macOS only) |
+| `c` | Create a new station |
+| `x` | Release station (reset repos to main, set to idle for reuse) |
+| `D` | Delete station (remove directory and unregister) |
 | `f` | Send follow-up prompt to active station's amp window |
+| `v` | View station detail |
+| `g` | Open station folder in file explorer |
 
 **Features:**
 - **Session restore** — closing a terminal window doesn't kill the session; press `w` to reattach
@@ -167,6 +172,9 @@ Stations use tmux sessions for terminal management. Pressing `W` on a PR/issue c
 - **Issue flow selection** — choose between "investigate + plan" or "all-in-one" workflows
 - **Follow-up prompts** — send follow-up commands to amp without leaving the TUI
 - **Window dedup** — re-pressing `w` focuses the existing window instead of opening duplicates
+- **Station naming** — when opening an idle station without a PR/issue, prompts for a name/purpose (shown in the Ref column)
+- **Amp activity monitor** — polls tmux panes every 5s to show idle/working/offline status per station with color-coded durations (green idle, cyan→yellow→red working)
+- **Non-blocking operations** — release, delete, and activation run in background threads without freezing the TUI
 
 Falls back to native terminal launching (Windows Terminal / gnome-terminal / macOS Terminal) if `terminal_backend` is set to `"native"` in config.
 
