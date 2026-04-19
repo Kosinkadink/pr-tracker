@@ -18,7 +18,8 @@ class StationDetailScreen(Screen):
     BINDINGS = [
         Binding("escape", "close", "Close"),
         Binding("q", "close", "Back"),
-        Binding("w", "open_wt", "Open WT"),
+        Binding("w", "open_wt", "New Window"),
+        Binding("W", "switch_to", "Switch To"),
         Binding("g", "open_github", "GitHub"),
         Binding("f", "open_path", "Open folder"),
         Binding("X", "station_action", "Cancel / Release"),
@@ -168,6 +169,25 @@ class StationDetailScreen(Screen):
             group="station-activate",
             exclusive=True,
         )
+
+    def action_switch_to(self) -> None:
+        """Switch the current tmux client to this station (in-place)."""
+        station = self._station
+        if not station:
+            self.notify("Station not ready yet")
+            return
+        try:
+            from pr_tracker.tmux_sessions import switch_client, session_name_for_station, is_inside_tmux
+            if not is_inside_tmux():
+                self.notify("Not inside tmux — use 'w' to open in a new window", severity="warning")
+                return
+            name = session_name_for_station(station["id"])
+            if switch_client(name):
+                self.notify(f"Switched to station {station['id']}")
+            else:
+                self.notify(f"No tmux session — open with 'w' first", severity="warning")
+        except Exception as e:
+            self.notify(f"Switch failed: {e}", severity="warning")
 
     def action_open_path(self) -> None:
         import subprocess

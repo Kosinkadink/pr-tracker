@@ -286,12 +286,15 @@ class PRTrackerApp(App):
         pr_number: int | None = None,
         issue_number: int | None = None,
         ref: str | None = None,
+        title: str = "",
+        body: str = "",
     ) -> None:
         """Open existing station, view in-progress job, or create/reuse one.
 
         Centralises the station lookup → reuse → create logic so individual
         screens don't need to duplicate it.  Pass *ref* for branch-based
-        stations (no PR/issue number).
+        stations (no PR/issue number).  *title* and *body* are stored in
+        station metadata for prompt presets.
         """
         is_pr = pr_number is not None
         number = pr_number if is_pr else issue_number
@@ -311,8 +314,8 @@ class PRTrackerApp(App):
                     self.push_screen(StationDetailScreen(job=job))
                     return
 
-        # Check for existing station — open WT tabs
-        from pr_tracker.stations import list_stations, open_wt_tabs, find_idle_station
+        # Check for existing station — open terminal
+        from pr_tracker.stations import list_stations, find_idle_station
         for s in list_stations():
             if s.get("repo") != repo:
                 continue
@@ -325,10 +328,20 @@ class PRTrackerApp(App):
                 match = bool(ref and s.get("ref") == ref)
             if match:
                 sid = s["id"]
-                if open_wt_tabs(sid):
-                    self.notify(f"Opened WT tabs for station {sid}")
-                else:
-                    self.notify("Failed to open WT tabs", severity="warning")
+                # Ensure title/body are stored (may be missing from older stations)
+                if title and not s.get("title"):
+                    from pr_tracker.stations import update_station
+                    update_station(sid, title=title, body=body)
+                    s = {**s, "title": title, "body": body}
+                from pr_tracker_tui.screens.station_activate import activate_and_open_wt
+                self.run_worker(
+                    lambda: activate_and_open_wt(
+                        self.screen, s, on_done=lambda _: None,
+                    ),
+                    thread=True,
+                    group="station-activate",
+                    exclusive=True,
+                )
                 return
 
         # No station — reuse idle or create new
@@ -340,6 +353,8 @@ class PRTrackerApp(App):
                 pr_number=pr_number,
                 issue_number=issue_number,
                 ref=ref,
+                title=title,
+                body=body,
                 open_wt_on_complete=True,
             )
         else:
@@ -348,6 +363,8 @@ class PRTrackerApp(App):
                 pr_number=pr_number,
                 issue_number=issue_number,
                 ref=ref,
+                title=title,
+                body=body,
                 open_wt_on_complete=True,
             )
 
@@ -358,6 +375,8 @@ class PRTrackerApp(App):
         pr_number: int | None = None,
         issue_number: int | None = None,
         ref: str | None = None,
+        title: str = "",
+        body: str = "",
         open_wt_on_complete: bool = False,
     ) -> None:
         """Kick off station creation in a background thread.
@@ -413,6 +432,10 @@ class PRTrackerApp(App):
                     cancel_event=job.cancel_event,
                 )
                 job.station_id = station["id"]
+                # Store title/body for prompt presets
+                if title or body:
+                    from pr_tracker.stations import update_station
+                    update_station(station["id"], title=title, body=body)
                 # If cancel was requested while create_station was finishing,
                 # unregister the station so it doesn't linger.
                 if job.cancel_event.is_set():
@@ -424,11 +447,16 @@ class PRTrackerApp(App):
                     return
                 job.done = True
                 job.progress_msg = f"✓ Done — station{station['id']}"
-                # Open WT tabs if requested
+                # Open terminal and show prompt preview
                 if open_wt_on_complete:
                     try:
-                        from pr_tracker.stations import open_wt_tabs
-                        open_wt_tabs(station["id"])
+                        from pr_tracker.stations import get_station
+                        from pr_tracker_tui.screens.station_activate import activate_and_open_wt
+                        updated = get_station(station["id"])
+                        if updated:
+                            activate_and_open_wt(
+                                self.screen, updated, on_done=lambda _: None,
+                            )
                     except Exception:
                         pass
                 self.call_from_thread(
@@ -465,17 +493,19 @@ class PRTrackerApp(App):
         pr_number: int | None = None,
         issue_number: int | None = None,
         ref: str | None = None,
+        title: str = "",
+        body: str = "",
         open_wt_on_complete: bool = False,
     ) -> None:
         """Reuse an idle station in a background thread.
 
         Resets the old repo, pulls latest, checks out the new PR branch,
-        and optionally opens WT tabs on completion.
+        and optionally opens terminal tabs on completion.
         """
         self.notify(f"♻️ Reusing station {station_id}…")
 
         def _run() -> None:
-            from pr_tracker.stations import reuse_station, open_wt_tabs
+            from pr_tracker.stations import reuse_station, update_station, get_station
 
             try:
                 station = reuse_station(
@@ -485,9 +515,17 @@ class PRTrackerApp(App):
                     issue_number=issue_number,
                     ref=ref,
                 )
+                # Store title/body for prompt presets
+                if title or body:
+                    update_station(station["id"], title=title, body=body)
                 if open_wt_on_complete:
                     try:
-                        open_wt_tabs(station["id"])
+                        from pr_tracker_tui.screens.station_activate import activate_and_open_wt
+                        updated = get_station(station["id"])
+                        if updated:
+                            activate_and_open_wt(
+                                self.screen, updated, on_done=lambda _: None,
+                            )
                     except Exception:
                         pass
                 self.call_from_thread(

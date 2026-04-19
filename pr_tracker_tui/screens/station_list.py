@@ -16,13 +16,15 @@ class StationListScreen(Screen):
     """Screen listing all registered stations and in-progress creations."""
 
     BINDINGS = [
-        Binding("w", "open_wt", "Open WT"),
+        Binding("w", "open_wt", "New Window"),
+        Binding("W", "switch_to", "Switch To"),
         Binding("v", "view_detail", "Detail"),
         Binding("c", "create", "Create"),
         Binding("r", "refresh", "Refresh"),
         Binding("x", "release", "Release"),
         Binding("X", "cancel_job", "Cancel"),
         Binding("D", "destroy", "Delete"),
+        Binding("f", "followup", "Follow-up"),
         Binding("g", "open_path", "Open folder"),
         Binding("escape", "back", "Back"),
         Binding("q", "back", "Back"),
@@ -176,6 +178,26 @@ class StationListScreen(Screen):
             exclusive=True,
         )
 
+    def action_switch_to(self) -> None:
+        """Switch the current tmux client to the selected station (in-place)."""
+        station = self._selected_station()
+        if not station:
+            self.notify("No completed station selected")
+            return
+
+        try:
+            from pr_tracker.tmux_sessions import switch_client, session_name_for_station, is_inside_tmux
+            if not is_inside_tmux():
+                self.notify("Not inside tmux — use 'w' to open in a new window", severity="warning")
+                return
+            name = session_name_for_station(station["id"])
+            if switch_client(name):
+                self.notify(f"Switched to station {station['id']}")
+            else:
+                self.notify(f"Station {station['id']} has no tmux session — open it first with 'w'", severity="warning")
+        except Exception as e:
+            self.notify(f"Switch failed: {e}", severity="warning")
+
     def action_view_detail(self) -> None:
         """Open station detail view."""
         self._open_detail()
@@ -263,6 +285,33 @@ class StationListScreen(Screen):
             self._refresh_table()
         else:
             self.notify(f"Station {sid} not found")
+
+    def action_followup(self) -> None:
+        """Send a follow-up prompt to the selected station's amp window."""
+        station = self._selected_station()
+        if not station:
+            self.notify("No completed station selected")
+            return
+        if station.get("status") != "active":
+            self.notify("Station is not active", severity="warning")
+            return
+
+        from .prompt_preview import FollowUpScreen
+        from .station_activate import _send_prompt_to_amp, _station_title
+
+        title = _station_title(station)
+
+        def _on_followup(result: str | None) -> None:
+            if result is not None:
+                self.run_worker(
+                    lambda: _send_prompt_to_amp(self, station, result),
+                    thread=True,
+                )
+
+        self.app.push_screen(
+            FollowUpScreen(title=title),
+            callback=_on_followup,
+        )
 
     def action_open_path(self) -> None:
         import subprocess

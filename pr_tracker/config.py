@@ -85,6 +85,18 @@ def save_tracker_config(config: dict) -> None:
     atomic_write(TRACKER_CONFIG_FILE, json.dumps(config, indent=2) + "\n", backup=True)
 
 
+def get_terminal_backend() -> str:
+    """Return the configured terminal backend: ``"tmux"`` (default) or ``"native"``."""
+    config = load_tracker_config()
+    return config.get("terminal_backend", "tmux")
+
+
+def get_tmux_path() -> str | None:
+    """Return a custom tmux binary path, or None for auto-detect."""
+    config = load_tracker_config()
+    return config.get("tmux_path")
+
+
 def load_runner_servers() -> list[dict]:
     """Return list of configured runner servers as [{name, url}, ...].
 
