@@ -94,9 +94,10 @@ def _run_tmux(
 def _apply_style(session: str) -> None:
     """Apply neutral dark status bar style to a session.
 
-    Mouse is disabled — psmux intercepts wheel-scroll events for copy
-    mode without checking ``mouse_any_flag`` (unlike real tmux), and
-    doesn't support custom ``WheelUpPane`` bindings to work around it.
+    On Windows, mouse is disabled — psmux intercepts wheel-scroll events
+    for copy mode without checking ``mouse_any_flag`` (unlike real tmux),
+    and doesn't support custom ``WheelUpPane`` bindings to work around it.
+    On Linux/macOS, real tmux handles mouse passthrough correctly.
     """
     style_cmds = [
         ["set", "-t", session, "status-style", "bg=#333333,fg=#cccccc"],
@@ -106,8 +107,9 @@ def _apply_style(session: str) -> None:
         ["set", "-t", session, "status-left-style", "fg=#88aaff,bold"],
         ["set", "-t", session, "status-right", "%H:%M"],
         ["set", "-t", session, "status-right-style", "fg=#888888"],
-        ["set", "-t", session, "mouse", "off"],
     ]
+    if sys.platform == "win32":
+        style_cmds.append(["set", "-t", session, "mouse", "off"])
     for cmd_args in style_cmds:
         _run_tmux(cmd_args, check=False)
 
