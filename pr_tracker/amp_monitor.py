@@ -5,15 +5,10 @@ or working (actively processing), and tracks how long it's been in
 that state.  Used to surface activity status in the TUI and catch
 stuck agents.
 
-Detection uses the last line of the pane (below the input box).  When
-amp is working, this line has a spinner/progress indicator that changes
-between polls.  When idle, it's static (shows git diff stats or is
-blank).  User typing happens inside the input box and doesn't affect
-this line.
-
-  - ``skills`` present in capture-pane output → amp is running
-  - Last line changed since last poll → **working**
-  - Last line unchanged since last poll → **idle**
+Detection markers:
+  - ``skills`` in capture-pane output → amp is running
+  - ``Esc to cancel`` in last lines → **working**
+  - ``skills`` present but no ``Esc to cancel`` → **idle**
   - capture-pane fails or no ``skills`` → **offline**
 """
 
@@ -56,21 +51,18 @@ def _monitor_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Single-station capture
+# Single-station probe
 # ---------------------------------------------------------------------------
 
-def _capture_activity_line(session_name: str, window: str | int = "amp") -> str | None:
-    """Capture the amp activity indicator line.  Returns it or None if offline.
+def probe_amp_status(session_name: str, window: str | int = "amp") -> str:
+    """Probe a single amp window and return its state string.
 
-    The activity line is the last non-empty line of the pane, which sits
-    below the input box.  When amp is working, this line contains a
-    spinner/progress indicator that changes between polls.  When idle,
-    it's static (e.g. git diff stats).
+    Returns ``"idle"``, ``"working"``, or ``"offline"``.
     """
     from .tmux_sessions import _run_tmux, has_session
 
     if not has_session(session_name):
-        return None
+        return "offline"
 
     target = f"{session_name}:{window}"
     result = _run_tmux(
@@ -78,19 +70,19 @@ def _capture_activity_line(session_name: str, window: str | int = "amp") -> str 
         check=False,
     )
     if result.returncode != 0:
-        return None
+        return "offline"
 
     output = result.stdout
     if "skills" not in output:
-        return None
+        return "offline"
 
-    # Return the last non-empty line (activity indicator area)
-    lines = output.rstrip("\n").split("\n")
-    for line in reversed(lines):
-        if line.strip():
-            return line
+    # When amp is actively working, the last line shows a spinner
+    # and "Esc to cancel".  This text is only present during active
+    # processing and disappears when amp returns to idle.
+    if "Esc to cancel" in output:
+        return "working"
 
-    return None
+    return "idle"
 
 
 # ---------------------------------------------------------------------------
@@ -99,9 +91,6 @@ def _capture_activity_line(session_name: str, window: str | int = "amp") -> str 
 
 class AmpMonitor:
     """Background thread that polls all active stations' amp windows.
-
-    Detection uses content-change comparison: if the pane content changed
-    since the last poll, amp is working.  If stable, amp is idle.
 
     Usage::
 
@@ -115,7 +104,6 @@ class AmpMonitor:
 
     def __init__(self) -> None:
         self._statuses: dict[int, AmpStatus] = {}
-        self._prev_bars: dict[int, str] = {}
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -171,21 +159,7 @@ class AmpMonitor:
         for s in active:
             sid = s["id"]
             session_name = s.get("tmux_session") or session_name_for_station(sid)
-
-            line = _capture_activity_line(session_name)
-            if line is None:
-                new_state = "offline"
-            else:
-                prev_line = self._prev_bars.get(sid)
-                self._prev_bars[sid] = line
-
-                if prev_line is None:
-                    # First poll — can't determine yet, assume idle
-                    new_state = "idle"
-                elif line != prev_line:
-                    new_state = "working"
-                else:
-                    new_state = "idle"
+            new_state = probe_amp_status(session_name)
 
             with self._lock:
                 old = self._statuses.get(sid)
@@ -202,6 +176,3 @@ class AmpMonitor:
             for sid in list(self._statuses):
                 if sid not in active_ids:
                     del self._statuses[sid]
-        for sid in list(self._prev_bars):
-            if sid not in active_ids:
-                del self._prev_bars[sid]
