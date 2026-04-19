@@ -147,6 +147,7 @@ class PRTrackerApp(App):
         self._deploy_jobs: list[LocalDeployJob] = []
         self._remote_deploys: set[tuple[str, int]] = self._load_remote_deploys()
         self._remote_deploys_by_server: dict[str, set[tuple[str, int]]] = {}
+        self._shutting_down = False
         import time
         self._remote_sync_time: float = time.time() if self._remote_deploys else 0.0
 
@@ -210,6 +211,8 @@ class PRTrackerApp(App):
 
     def _sync_remote_deploys_tick(self) -> None:
         """Periodically sync remote deploy icons with the server."""
+        if self._shutting_down:
+            return
         self.run_worker(self._fetch_remote_deploys, thread=True, name="app_remote_sync")
 
     def _fetch_remote_deploys(self) -> None:
@@ -265,11 +268,11 @@ class PRTrackerApp(App):
 
     def exit(self, *args, **kwargs) -> None:
         """Cancel all running creation threads and stop deploys on exit."""
+        self._shutting_down = True
+        # Signal all creation jobs to cancel (threads are daemons — no join)
         for job in self._creation_jobs:
             job.cancel_event.set()
-        for t in self._creation_threads:
-            t.join(timeout=2)
-        # Stop running ComfyUI instances
+        # Stop running ComfyUI instances (best-effort, don't block)
         for job in self._deploy_jobs:
             if job.phase == "running" and job.install_name:
                 try:
@@ -278,6 +281,9 @@ class PRTrackerApp(App):
                 except Exception:
                     pass
         super().exit(*args, **kwargs)
+        # Force-exit if Textual hangs on worker cleanup
+        import os
+        os._exit(0)
 
     def open_or_create_station(
         self,
