@@ -5,13 +5,15 @@ or working (actively processing), and tracks how long it's been in
 that state.  Used to surface activity status in the TUI and catch
 stuck agents.
 
-Detection uses the amp status bar line (contains token count and cost).
-This line only changes when amp is actively generating output — user
-typing in the input box doesn't affect it.
+Detection uses the last line of the pane (below the input box).  When
+amp is working, this line has a spinner/progress indicator that changes
+between polls.  When idle, it's static (shows git diff stats or is
+blank).  User typing happens inside the input box and doesn't affect
+this line.
 
   - ``skills`` present in capture-pane output → amp is running
-  - Status bar changed since last poll → **working**
-  - Status bar unchanged since last poll → **idle**
+  - Last line changed since last poll → **working**
+  - Last line unchanged since last poll → **idle**
   - capture-pane fails or no ``skills`` → **offline**
 """
 
@@ -57,12 +59,13 @@ def _monitor_config() -> dict:
 # Single-station capture
 # ---------------------------------------------------------------------------
 
-def _capture_status_bar(session_name: str, window: str | int = "amp") -> str | None:
-    """Capture the amp status bar line.  Returns it or None if offline.
+def _capture_activity_line(session_name: str, window: str | int = "amp") -> str | None:
+    """Capture the amp activity indicator line.  Returns it or None if offline.
 
-    The status bar is the line containing ``skills`` — it includes
-    the token usage, cost, and model name.  This line only changes
-    when amp is actively generating output.
+    The activity line is the last non-empty line of the pane, which sits
+    below the input box.  When amp is working, this line contains a
+    spinner/progress indicator that changes between polls.  When idle,
+    it's static (e.g. git diff stats).
     """
     from .tmux_sessions import _run_tmux, has_session
 
@@ -78,8 +81,13 @@ def _capture_status_bar(session_name: str, window: str | int = "amp") -> str | N
         return None
 
     output = result.stdout
-    for line in output.split("\n"):
-        if "skills" in line:
+    if "skills" not in output:
+        return None
+
+    # Return the last non-empty line (activity indicator area)
+    lines = output.rstrip("\n").split("\n")
+    for line in reversed(lines):
+        if line.strip():
             return line
 
     return None
@@ -164,17 +172,17 @@ class AmpMonitor:
             sid = s["id"]
             session_name = s.get("tmux_session") or session_name_for_station(sid)
 
-            bar = _capture_status_bar(session_name)
-            if bar is None:
+            line = _capture_activity_line(session_name)
+            if line is None:
                 new_state = "offline"
             else:
-                prev_bar = self._prev_bars.get(sid)
-                self._prev_bars[sid] = bar
+                prev_line = self._prev_bars.get(sid)
+                self._prev_bars[sid] = line
 
-                if prev_bar is None:
+                if prev_line is None:
                     # First poll — can't determine yet, assume idle
                     new_state = "idle"
-                elif bar != prev_bar:
+                elif line != prev_line:
                     new_state = "working"
                 else:
                     new_state = "idle"
