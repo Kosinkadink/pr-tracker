@@ -92,12 +92,6 @@ def _open_tabs_and_notify(screen: Screen, sid: int, on_done=None) -> None:
             screen.app.call_from_thread(
                 _show_prompt_preview, screen, station,
             )
-        elif station and is_new and not _has_prompt_preview(station) and not station.get("title"):
-            # New session for a station with no PR/issue and no name —
-            # prompt for a name/purpose, then focus.
-            screen.app.call_from_thread(
-                _show_name_prompt, screen, station,
-            )
         elif not is_new:
             # No prompt dialog needed — focus the existing station window.
             from pr_tracker.tmux_sessions import _focus_existing_terminal, session_name_for_station
@@ -199,22 +193,6 @@ def _send_prompt_to_amp(screen: Screen, station: dict, prompt: str) -> None:
 
     import threading
     threading.Thread(target=_do_send, daemon=True).start()
-
-
-def _show_name_prompt(screen: Screen, station: dict) -> None:
-    """Show a name/purpose input for stations without PR/issue."""
-    from .prompt_preview import StationNameScreen
-    from pr_tracker.tmux_sessions import _focus_existing_terminal, session_name_for_station
-
-    sid = station["id"]
-
-    def _on_name(name: str | None) -> None:
-        if name:
-            from pr_tracker.stations import update_station
-            update_station(sid, title=name)
-        _focus_existing_terminal(session_name_for_station(sid))
-
-    screen.app.push_screen(StationNameScreen(), callback=_on_name)
 
 
 def _has_prompt_preview(station: dict) -> bool:

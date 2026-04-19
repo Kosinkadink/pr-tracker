@@ -131,7 +131,7 @@ TagScreen {
 }
 
 /* Prompt preview modals */
-PromptPreviewScreen, IssueFlowScreen, FollowUpScreen {
+PromptPreviewScreen, IssueFlowScreen, FollowUpScreen, StationNameScreen {
     align: center middle;
     background: rgba(0, 0, 0, 0.6);
 }

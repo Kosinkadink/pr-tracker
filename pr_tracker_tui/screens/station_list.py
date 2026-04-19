@@ -210,6 +210,27 @@ class StationListScreen(Screen):
             self.notify("No completed station selected")
             return
 
+        # If station has no PR/issue and no name, prompt for a name first
+        if (
+            not station.get("pr_number")
+            and not station.get("issue_number")
+            and not station.get("title")
+        ):
+            from .prompt_preview import StationNameScreen
+
+            def _on_name(name: str | None) -> None:
+                if name:
+                    from pr_tracker.stations import update_station
+                    update_station(station["id"], title=name)
+                    station["title"] = name
+                self._do_open_wt(station)
+
+            self.app.push_screen(StationNameScreen(), callback=_on_name)
+        else:
+            self._do_open_wt(station)
+
+    def _do_open_wt(self, station: dict) -> None:
+        """Activate and open terminal for station."""
         from .station_activate import activate_and_open_wt
 
         def _on_done(updated: dict) -> None:
