@@ -92,7 +92,13 @@ def _run_tmux(
 
 
 def _apply_style(session: str) -> None:
-    """Apply neutral dark status bar style to a session."""
+    """Apply neutral dark status bar style to a session.
+
+    Mouse is explicitly disabled — psmux intercepts scroll events for
+    copy mode without checking ``mouse_any_flag``, breaking TUI apps.
+    With mouse off, the terminal emulator passes mouse escape sequences
+    directly to applications.
+    """
     style_cmds = [
         ["set", "-t", session, "status-style", "bg=#333333,fg=#cccccc"],
         ["set", "-t", session, "window-status-style", "bg=#333333,fg=#888888"],
