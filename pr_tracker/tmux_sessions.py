@@ -307,7 +307,7 @@ def attach_session(
         else:
             binary = ensure_tmux()
             cmd = [binary, "attach-session", "-t", name]
-            subprocess.Popen(cmd, env=_tmux_env())
+            subprocess.run(cmd, env=_tmux_env())
     except OSError:
         return False
 

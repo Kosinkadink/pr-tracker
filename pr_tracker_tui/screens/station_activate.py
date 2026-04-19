@@ -172,12 +172,9 @@ def _send_prompt_to_amp(screen: Screen, station: dict, prompt: str) -> None:
                 )
                 return
 
-            # Collapse newlines — psmux interprets them as Enter keypresses.
-            import re
-            flat_prompt = prompt.replace("\r\n", "\n")
-            flat_prompt = re.sub(r"([^.!?])\n\n+", r"\1. ", flat_prompt)
-            flat_prompt = re.sub(r"\n\n+", " ", flat_prompt)
-            flat_prompt = flat_prompt.replace("\n", " ")
+            # Flatten newlines for tmux send-keys (psmux compat)
+            from pr_tracker.presets import flatten_for_send
+            flat_prompt = flatten_for_send(prompt)
             # Try "amp" window by name first, fall back to window index 1
             try:
                 send_keys(session_name, "amp", flat_prompt)

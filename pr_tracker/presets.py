@@ -178,3 +178,17 @@ def resolve_preset(
         for key, value in variables.items():
             result = result.replace(f"{{{key}}}", value)
         return result
+
+
+def flatten_for_send(prompt: str) -> str:
+    """Collapse newlines so the prompt can be sent via tmux send-keys.
+
+    psmux interprets literal newlines as Enter keypresses, so multi-line
+    prompts must be flattened into a single line.
+    """
+    import re
+    text = prompt.replace("\r\n", "\n")
+    text = re.sub(r"([^.!?])\n\n+", r"\1. ", text)
+    text = re.sub(r"\n\n+", " ", text)
+    text = text.replace("\n", " ")
+    return text

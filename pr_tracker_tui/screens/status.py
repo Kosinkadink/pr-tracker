@@ -282,9 +282,11 @@ class StatusScreen(Screen):
 
         # Render placeholders immediately so the user sees all servers
         merged = sorted(updated.values(), key=lambda r: r.get("server_name", ""))
-        self._last_data["remotes"] = merged
+        # Pass a snapshot — don't mutate self._last_data from this thread
+        # (the main thread updates _last_data in on_worker_state_changed).
+        snapshot = {**self._last_data, "remotes": merged}
         self.app.call_from_thread(
-            self._render_status, self._last_data, loading=True,
+            self._render_status, snapshot, loading=True,
         )
 
         # Fetch all servers in parallel — main speed win
