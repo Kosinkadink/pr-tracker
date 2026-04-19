@@ -5,16 +5,18 @@ or working (actively processing), and tracks how long it's been in
 that state.  Used to surface activity status in the TUI and catch
 stuck agents.
 
-Detection logic uses content-change comparison:
+Detection uses the amp status bar line (contains token count and cost).
+This line only changes when amp is actively generating output — user
+typing in the input box doesn't affect it.
+
   - ``skills`` present in capture-pane output → amp is running
-  - Pane content changed since last poll → **working**
-  - Pane content unchanged since last poll → **idle**
+  - Status bar changed since last poll → **working**
+  - Status bar unchanged since last poll → **idle**
   - capture-pane fails or no ``skills`` → **offline**
 """
 
 from __future__ import annotations
 
-import hashlib
 import threading
 import time
 from dataclasses import dataclass, field
@@ -55,8 +57,13 @@ def _monitor_config() -> dict:
 # Single-station capture
 # ---------------------------------------------------------------------------
 
-def _capture_amp_pane(session_name: str, window: str | int = "amp") -> str | None:
-    """Capture the amp pane content.  Returns output string or None if offline."""
+def _capture_status_bar(session_name: str, window: str | int = "amp") -> str | None:
+    """Capture the amp status bar line.  Returns it or None if offline.
+
+    The status bar is the line containing ``skills`` — it includes
+    the token usage, cost, and model name.  This line only changes
+    when amp is actively generating output.
+    """
     from .tmux_sessions import _run_tmux, has_session
 
     if not has_session(session_name):
@@ -71,15 +78,11 @@ def _capture_amp_pane(session_name: str, window: str | int = "amp") -> str | Non
         return None
 
     output = result.stdout
-    if "skills" not in output:
-        return None
+    for line in output.split("\n"):
+        if "skills" in line:
+            return line
 
-    return output
-
-
-def _content_hash(output: str) -> str:
-    """Return a fast hash of the pane content for change detection."""
-    return hashlib.md5(output.encode("utf-8", errors="replace")).hexdigest()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +107,7 @@ class AmpMonitor:
 
     def __init__(self) -> None:
         self._statuses: dict[int, AmpStatus] = {}
-        self._prev_hashes: dict[int, str] = {}
+        self._prev_bars: dict[int, str] = {}
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -161,18 +164,17 @@ class AmpMonitor:
             sid = s["id"]
             session_name = s.get("tmux_session") or session_name_for_station(sid)
 
-            output = _capture_amp_pane(session_name)
-            if output is None:
+            bar = _capture_status_bar(session_name)
+            if bar is None:
                 new_state = "offline"
             else:
-                current_hash = _content_hash(output)
-                prev_hash = self._prev_hashes.get(sid)
-                self._prev_hashes[sid] = current_hash
+                prev_bar = self._prev_bars.get(sid)
+                self._prev_bars[sid] = bar
 
-                if prev_hash is None:
+                if prev_bar is None:
                     # First poll — can't determine yet, assume idle
                     new_state = "idle"
-                elif current_hash != prev_hash:
+                elif bar != prev_bar:
                     new_state = "working"
                 else:
                     new_state = "idle"
@@ -192,6 +194,6 @@ class AmpMonitor:
             for sid in list(self._statuses):
                 if sid not in active_ids:
                     del self._statuses[sid]
-        for sid in list(self._prev_hashes):
+        for sid in list(self._prev_bars):
             if sid not in active_ids:
-                del self._prev_hashes[sid]
+                del self._prev_bars[sid]
