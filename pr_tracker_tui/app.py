@@ -281,7 +281,11 @@ class PRTrackerApp(App):
                 except Exception:
                     pass
         super().exit(*args, **kwargs)
-        # Force-exit if Textual hangs on worker cleanup
+        # Textual's async shutdown (_close_all → widget/timer teardown)
+        # hangs indefinitely — likely blocked on thread workers doing
+        # network I/O that can't be cancelled.  All important cleanup
+        # (cancel jobs, stop ComfyUI) is done synchronously above, and
+        # all custom threads are daemons, so force-exit is safe here.
         import os
         os._exit(0)
 
