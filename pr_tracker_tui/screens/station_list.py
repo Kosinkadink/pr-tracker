@@ -17,7 +17,7 @@ def _amp_status_cell(app, station: dict) -> Text:
     import time
 
     sid = station.get("id")
-    if not sid or station.get("status") != "active" or not station.get("tmux_session"):
+    if not sid or station.get("status") != "active":
         return Text("—", style="dim")
 
     status = app.amp_monitor.get_status(sid)

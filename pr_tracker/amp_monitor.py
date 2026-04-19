@@ -167,17 +167,19 @@ class AmpMonitor:
         """Poll all active stations with tmux sessions."""
         from .stations import list_stations
 
+        from .tmux_sessions import session_name_for_station
+
         stations = list_stations()
         active = [
             s for s in stations
-            if s.get("status") == "active" and s.get("tmux_session")
+            if s.get("status") == "active"
         ]
 
         now = time.monotonic()
 
         for s in active:
             sid = s["id"]
-            session_name = s["tmux_session"]
+            session_name = s.get("tmux_session") or session_name_for_station(sid)
             new_state = probe_amp_status(
                 session_name, station_path=s.get("path", ""),
             )
