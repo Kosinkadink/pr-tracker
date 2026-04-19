@@ -456,6 +456,7 @@ class GitHubListScreen(Screen):
 
         self.app.open_or_create_station(
             repo=repo, pr_number=pr_num, issue_number=issue_num,
+            title=item.get("title", ""), body=item.get("body", ""),
         )
         # Immediately update the icon on the current row
         self._station_items.add((repo, number))

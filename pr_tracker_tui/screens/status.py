@@ -116,7 +116,7 @@ class StatusScreen(Screen):
 
     def _fetch_status(self) -> None:
         self.run_worker(self._do_fetch_local, thread=True, name="status_fetch_local")
-        self.run_worker(self._do_fetch_remote, thread=True, name="status_fetch_remote")
+        self.run_worker(self._do_fetch_remote_parallel, thread=True, name="status_fetch_remote")
 
     def _do_fetch_local(self) -> list:
         try:
@@ -197,6 +197,104 @@ class StatusScreen(Screen):
                     "server_name": name, "server_url": url,
                     "ok": False, "error": str(e),
                 })
+        return results
+
+    def _fetch_one_server(self, srv: dict) -> dict:
+        """Fetch installation + job data from a single remote server."""
+        from pr_tracker.runner_client import runner_request
+
+        url = srv["url"]
+        name = srv["name"]
+        try:
+            inst_resp = runner_request("GET", url, "/installations", timeout=5)
+            if inst_resp.get("ok"):
+                for ri in inst_resp.get("installations", []):
+                    if "_status" in ri:
+                        saved_name = ri.get("name")
+                        ri.update(ri.pop("_status"))
+                        if saved_name:
+                            ri["name"] = saved_name
+                installations = inst_resp.get("installations", [])
+                jobs_resp = runner_request("GET", url, "/jobs", timeout=5)
+                if jobs_resp.get("ok"):
+                    active = {
+                        j["label"].split()[-1]: j["label"]
+                        for j in jobs_resp.get("jobs", [])
+                        if j.get("status") == "running"
+                    }
+                    known_names = {ri.get("name", "") for ri in installations}
+                    for ri in installations:
+                        ri_name = ri.get("name", "")
+                        if ri_name in active:
+                            ri["_active_job"] = active[ri_name]
+                    for inst_name, job_label in active.items():
+                        if inst_name not in known_names:
+                            installations.append({
+                                "name": inst_name,
+                                "path": "",
+                                "running": False,
+                                "_active_job": job_label,
+                                "_initializing": True,
+                            })
+                # Sort installations by name for stable display order
+                installations.sort(key=lambda ri: ri.get("name", ""))
+                return {
+                    "server_name": name, "server_url": url,
+                    "ok": True,
+                    "installations": installations,
+                }
+            else:
+                return {
+                    "server_name": name, "server_url": url,
+                    "ok": False,
+                    "error": inst_resp.get("error", "Unknown error"),
+                }
+        except Exception as e:
+            return {
+                "server_name": name, "server_url": url,
+                "ok": False, "error": str(e),
+            }
+
+    def _do_fetch_remote_parallel(self) -> list[dict]:
+        """Fetch all remote servers in parallel with incremental UI updates."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from pr_tracker.config import load_runner_servers
+
+        servers = load_runner_servers()
+        if not servers:
+            return []
+
+        # Pre-populate with placeholders for ALL servers so none
+        # disappear during incremental updates.  Previous results are
+        # kept as the baseline; servers that haven't responded yet
+        # show their last-known state (or "connecting" if first fetch).
+        updated: dict[str, dict] = {}
+        for srv in servers:
+            updated[srv["name"]] = {
+                "server_name": srv["name"], "server_url": srv["url"],
+                "ok": False, "error": "Connecting…",
+            }
+        # Overlay previous results
+        for r in self._last_data.get("remotes", []):
+            name = r.get("server_name", "")
+            if name in updated:
+                updated[name] = r
+
+        # Render placeholders immediately so the user sees all servers
+        merged = sorted(updated.values(), key=lambda r: r.get("server_name", ""))
+        # Pass a snapshot — don't mutate self._last_data from this thread
+        # (the main thread updates _last_data in on_worker_state_changed).
+        snapshot = {**self._last_data, "remotes": merged}
+        self.app.call_from_thread(
+            self._render_status, snapshot, loading=True,
+        )
+
+        # Fetch all servers in parallel — main speed win
+        with ThreadPoolExecutor(max_workers=len(servers)) as pool:
+            for srv, result in zip(servers, pool.map(self._fetch_one_server, servers)):
+                updated[srv["name"]] = result
+
+        results = sorted(updated.values(), key=lambda r: r.get("server_name", ""))
         return results
 
     def _sync_deploy_jobs(self, data: dict) -> None:
@@ -534,7 +632,16 @@ class StatusScreen(Screen):
                     parts.append(f"{sel}[yellow]⚠ {escape(str(error))}[/yellow]\n")
                     parts.append("  [dim]Retrying…[/dim]\n\n")
 
+        # Preserve selection by label across re-renders
+        old_label = ""
+        if self._items and 0 <= self._selected < len(self._items):
+            old_label = self._items[self._selected].label
         self._items = items
+        if old_label and items:
+            for i, item in enumerate(items):
+                if item.label == old_label:
+                    self._selected = i
+                    break
         # Clamp selection in case items shrunk
         if self._selected >= len(items) and items:
             self._selected = len(items) - 1

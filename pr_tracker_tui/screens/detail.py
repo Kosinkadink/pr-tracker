@@ -209,7 +209,10 @@ class DetailScreen(Screen):
         if not repo or not number:
             self.notify("PR data incomplete")
             return
-        self.app.open_or_create_station(repo=repo, pr_number=number)
+        self.app.open_or_create_station(
+            repo=repo, pr_number=number,
+            title=self._pr.get("title", ""), body=self._pr.get("body", ""),
+        )
 
     def action_close(self) -> None:
         self.app.pop_screen()

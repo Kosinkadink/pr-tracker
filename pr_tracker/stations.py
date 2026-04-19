@@ -497,6 +497,7 @@ def create_station(
     # 4. Register in stations.json
     _check_cancel()
     progress("✓ Registering station…")
+    session_name = f"station{station_id}"
     station_meta: dict[str, Any] = {
         "id": station_id,
         "path": str(station_path),
@@ -507,6 +508,7 @@ def create_station(
         "created_at": _now_iso(),
         "last_used": _now_iso(),
         "status": "active" if (repo or pr_number or issue_number or ref) else "idle",
+        "tmux_session": session_name,
     }
     data = _load_stations_data()
     # Remove any orphan entry with the same ID (e.g. from _register_orphan_dirs)
@@ -552,6 +554,13 @@ def reuse_station(
         step += 1
         if on_progress:
             on_progress(msg, step, total)
+
+    # 0. Kill old tmux session (stale context from previous PR/issue)
+    try:
+        from .tmux_sessions import kill_station_session
+        kill_station_session(station_id)
+    except Exception:
+        pass
 
     # 1. Reset old repo if there was one
     old_repo = station.get("repo")
@@ -609,6 +618,7 @@ def reuse_station(
             s["issue_number"] = issue_number
             s["last_used"] = _now_iso()
             s["status"] = "active"
+            s["tmux_session"] = f"station{station_id}"
             station = dict(s)
             break
     _save_stations_data(data)
@@ -628,7 +638,17 @@ def update_station(station_id: int, **fields: Any) -> dict | None:
 
 
 def delete_station(station_id: int) -> bool:
-    """Remove a station from the registry (does NOT delete the directory)."""
+    """Remove a station from the registry (does NOT delete the directory).
+
+    Also kills the tmux session if one exists.
+    """
+    # Kill tmux session (best-effort)
+    try:
+        from .tmux_sessions import kill_station_session
+        kill_station_session(station_id)
+    except Exception:
+        pass
+
     data = _load_stations_data()
     before = len(data["stations"])
     data["stations"] = [s for s in data["stations"] if s.get("id") != station_id]
@@ -639,13 +659,24 @@ def delete_station(station_id: int) -> bool:
 
 
 def cleanup_station(station_id: int) -> None:
-    """Reset all nested repos in a station to main (best-effort)."""
+    """Reset all nested repos in a station to main (best-effort).
+
+    Also kills the tmux session if one exists — stale sessions from
+    the previous PR/issue have no value when the station is reused.
+    """
     station = get_station(station_id)
     if not station:
         return
     station_path = Path(station["path"])
     if not station_path.exists():
         return
+
+    # Kill tmux session (best-effort, don't fail if tmux isn't installed)
+    try:
+        from .tmux_sessions import kill_station_session
+        kill_station_session(station_id)
+    except Exception:
+        pass
 
     for dir_name, _ in NESTED_REPOS:
         nested = station_path / dir_name
@@ -657,7 +688,8 @@ def cleanup_station(station_id: int) -> None:
                 pass
 
     update_station(station_id, repo=None, ref=None, pr_number=None,
-                   issue_number=None, status="idle")
+                   issue_number=None, title=None, body=None,
+                   status="idle", tmux_session=None, prompt_sent=None)
 
 
 # ---------------------------------------------------------------------------
@@ -935,7 +967,14 @@ def launch_terminal_at_path(
 
     fmt = {"path": path, "title": title, "window": window}
     combine_sep = templates.get("combine")
-    creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, "DETACHED_PROCESS") else 0
+    # DETACHED_PROCESS prevents wt from opening a window when launched
+    # from inside a psmux/tmux session.  Skip the flag in that case.
+    import os as _os
+    inside_tmux = bool(_os.environ.get("TMUX") or _os.environ.get("PSMUX_SESSION"))
+    if inside_tmux:
+        creationflags = 0
+    else:
+        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, "DETACHED_PROCESS") else 0
 
     # Determine which tabs to open
     tabs = []
@@ -977,28 +1016,39 @@ def launch_terminal_at_path(
     return opened
 
 
+def _use_tmux_backend() -> bool:
+    """Return True if the tmux terminal backend should be used (default)."""
+    config = load_tracker_config()
+    return config.get("terminal_backend", "tmux") == "tmux"
+
+
 def open_terminal_tabs(
     station_id: int,
     *,
     shell: bool = True,
     amp: bool = True,
     skip_activate: bool = False,
-) -> bool:
+) -> tuple[bool, bool]:
     """Open terminal tabs for a station (cross-platform).
+
+    Uses tmux sessions by default.  If the tmux session already exists,
+    reattaches to it (session restore).  Falls back to native terminal
+    launching if ``terminal_backend`` is set to ``"native"`` in config.
 
     Unless *skip_activate* is True, this also activates the station (pulls
     latest on all branches).  Callers that handle activation separately
     (e.g. to show a dirty-repo warning first) should pass ``skip_activate=True``.
 
-    Returns True if at least one tab was launched, False otherwise.
+    Returns ``(ok, is_new)`` — *ok* is True if at least one tab was
+    launched, *is_new* is True if the session was freshly created.
     """
     station = get_station(station_id)
     if not station:
-        return False
+        return False, True
 
     path = station.get("path", "")
     if not path:
-        return False
+        return False, True
 
     # Activate (pull latest, set status) unless caller already did it.
     if not skip_activate:
@@ -1015,10 +1065,22 @@ def open_terminal_tabs(
         short = repo.split("/", 1)[1] if "/" in repo else repo
         title_base = f"Station {station_id} — {short} #{issue}"
 
-    return launch_terminal_at_path(
+    # --- tmux backend (default) ---
+    if _use_tmux_backend():
+        try:
+            from .tmux_sessions import open_station_session
+            return open_station_session(
+                station_id, path, title=title_base,
+            )
+        except Exception:
+            pass
+
+    # --- native terminal fallback ---
+    result = launch_terminal_at_path(
         path, title=title_base, window=f"station{station_id}",
         shell=shell, amp=amp,
     )
+    return result, True
 
 
 # Backward-compatible alias
@@ -1047,6 +1109,7 @@ def register_existing_station(
         "created_at": _now_iso(),
         "last_used": _now_iso(),
         "status": "active",
+        "tmux_session": f"station{station_id}",
         **fields,
     }
     data["stations"].append(station_meta)

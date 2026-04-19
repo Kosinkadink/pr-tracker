@@ -45,6 +45,7 @@ Screen {
 /* Confirm modal */
 ConfirmScreen {
     align: center middle;
+    background: rgba(0, 0, 0, 0.6);
 }
 
 #confirm-dialog {
@@ -59,6 +60,7 @@ ConfirmScreen {
 /* Deploy confirmation modal */
 DeployScreen, RemoteDeployScreen {
     align: center middle;
+    background: rgba(0, 0, 0, 0.6);
 }
 
 #deploy-dialog {
@@ -82,6 +84,7 @@ DeployScreen, RemoteDeployScreen {
 /* Tag modal */
 TagScreen {
     align: center middle;
+    background: rgba(0, 0, 0, 0.6);
 }
 
 #tag-dialog {
@@ -125,6 +128,38 @@ TagScreen {
     margin: 0 1;
     border: none;
     padding: 0 1;
+}
+
+/* Prompt preview modals */
+PromptPreviewScreen, IssueFlowScreen, FollowUpScreen {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+#prompt-preview-dialog {
+    width: 70;
+    height: auto;
+    max-height: 24;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#prompt-header {
+    margin-bottom: 1;
+}
+
+#prompt-scroll {
+    height: auto;
+    max-height: 14;
+    border: solid $primary-background;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#prompt-actions {
+    height: 1;
+    color: $text-muted;
 }
 
 /* Station detail screen */
