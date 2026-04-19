@@ -239,9 +239,9 @@ def send_keys(
 
 
 def is_inside_tmux() -> bool:
-    """Return True if the current process is running inside a tmux session."""
+    """Return True if the current process is running inside a tmux/psmux session."""
     import os
-    return bool(os.environ.get("TMUX"))
+    return bool(os.environ.get("TMUX") or os.environ.get("PSMUX_SESSION"))
 
 
 def _has_visible_window(title: str) -> bool:
