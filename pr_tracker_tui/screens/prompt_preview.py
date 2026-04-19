@@ -12,7 +12,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Static, TextArea
+from textual.widgets import Footer, Input, Static, TextArea
 
 
 class PromptPreviewScreen(ModalScreen[str | None]):
@@ -208,6 +208,43 @@ class FollowUpScreen(ModalScreen[str | None]):
 
     def action_pick_3(self) -> None:
         self._pick(2)
+
+    def action_skip(self) -> None:
+        self.dismiss(None)
+
+
+class StationNameScreen(ModalScreen[str | None]):
+    """Modal for entering a name/purpose for a new station."""
+
+    BINDINGS = [
+        Binding("escape", "skip", "Skip"),
+        Binding("q", "skip", "Skip", show=False),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="prompt-preview-dialog"):
+            yield Static(
+                "[bold]New Station[/bold]\n\n"
+                "[dim]Enter a name or purpose (optional):[/dim]",
+                id="prompt-header",
+            )
+            yield Input(placeholder="e.g. fix auth bug, refactor tests...", id="station-name-input")
+            yield Static(
+                "[bold]Enter[/bold] Create  ·  "
+                "[bold]Esc[/bold] Skip (no name)",
+                id="prompt-actions",
+            )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#station-name-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        name = event.value.strip()
+        self.dismiss(name if name else None)
 
     def action_skip(self) -> None:
         self.dismiss(None)

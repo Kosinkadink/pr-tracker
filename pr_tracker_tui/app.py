@@ -413,6 +413,8 @@ class PRTrackerApp(App):
         elif ref and repo:
             short = repo.split("/", 1)[1] if "/" in repo else repo
             label = f"{short} branch {ref}"
+        elif title:
+            label = title
 
         job = StationCreationJob(
             label=label, repo=repo, pr_number=pr_number, issue_number=issue_number, ref=ref

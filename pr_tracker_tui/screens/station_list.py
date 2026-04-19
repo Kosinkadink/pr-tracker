@@ -107,10 +107,13 @@ class StationListScreen(Screen):
             ref = s.get("ref") or "-"
             pr = s.get("pr_number")
             issue = s.get("issue_number")
+            name = s.get("title") or s.get("name", "")
             if pr:
                 ref = f"PR #{pr}"
             elif issue:
                 ref = f"Issue #{issue}"
+            elif name:
+                ref = name
 
             status = s.get("status", "?")
             if status == "active":
@@ -278,7 +281,16 @@ class StationListScreen(Screen):
         self._refresh_table()
 
     def action_create(self) -> None:
-        self.app.create_station_background()
+        """Create a new station, optionally with a name."""
+        from .prompt_preview import StationNameScreen
+
+        def _on_name(name: str | None) -> None:
+            self.app.create_station_background(
+                title=name or "",
+                open_wt_on_complete=True,
+            )
+
+        self.app.push_screen(StationNameScreen(), callback=_on_name)
 
     def action_refresh(self) -> None:
         self._refresh_table()
