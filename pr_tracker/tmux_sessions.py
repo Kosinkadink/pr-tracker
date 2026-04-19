@@ -94,10 +94,9 @@ def _run_tmux(
 def _apply_style(session: str) -> None:
     """Apply neutral dark status bar style to a session.
 
-    Mouse is left at the global default (``on`` for psmux).  psmux
-    intercepts wheel-scroll events for copy mode — this is a known
-    psmux limitation (no ``mouse_any_flag`` passthrough like real tmux).
-    Amp uses keyboard navigation for scrolling, so this is acceptable.
+    Mouse is disabled — psmux intercepts wheel-scroll events for copy
+    mode without checking ``mouse_any_flag`` (unlike real tmux), and
+    doesn't support custom ``WheelUpPane`` bindings to work around it.
     """
     style_cmds = [
         ["set", "-t", session, "status-style", "bg=#333333,fg=#cccccc"],
@@ -107,6 +106,7 @@ def _apply_style(session: str) -> None:
         ["set", "-t", session, "status-left-style", "fg=#88aaff,bold"],
         ["set", "-t", session, "status-right", "%H:%M"],
         ["set", "-t", session, "status-right-style", "fg=#888888"],
+        ["set", "-t", session, "mouse", "off"],
     ]
     for cmd_args in style_cmds:
         _run_tmux(cmd_args, check=False)
