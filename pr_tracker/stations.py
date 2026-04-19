@@ -225,15 +225,18 @@ def _run_git(
 
     If *on_output* is provided, stderr lines are streamed to it in real time.
     """
+    import base64 as _b64
     import os as _os
     env = {**_os.environ, "GIT_TERMINAL_PROMPT": "0"}
-    # Inject GITHUB_TOKEN for HTTPS auth if available.
+    # Inject GITHUB_TOKEN via HTTP Authorization header if available.
+    # Uses extraheader instead of URL rewriting to avoid polluting
+    # Windows Credential Manager with token-embedded URLs.
     _token = env.get("GITHUB_TOKEN", "").strip()
     if _token:
-        env["GIT_ASKPASS"] = "echo"
+        _basic = _b64.b64encode(f"x-access-token:{_token}".encode()).decode()
         env["GIT_CONFIG_COUNT"] = "1"
-        env["GIT_CONFIG_KEY_0"] = "url.https://x-access-token:{token}@github.com/.insteadOf".format(token=_token)
-        env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+        env["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraheader"
+        env["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_basic}"
 
     if cancel_event is None and on_output is None:
         # Fast path — no cancellation or streaming needed.
