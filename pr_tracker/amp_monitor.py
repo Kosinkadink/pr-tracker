@@ -5,6 +5,8 @@ or working (actively processing), and tracks how long it's been in
 that state.  Used to surface activity status in the TUI and catch
 stuck agents.
 
+State timestamps are persisted to disk so timers survive TUI restarts.
+
 Detection markers:
   - ``skills`` in capture-pane output → amp is running
   - ``Esc to cancel`` in last lines → **working**
@@ -14,12 +16,15 @@ Detection markers:
 
 from __future__ import annotations
 
+import json
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from .config import load_tracker_config
+from .config import ROOT, load_tracker_config
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +38,67 @@ class AmpStatus:
     state: str = "unknown"  # "idle" | "working" | "offline" | "unknown"
     since: float = 0.0      # monotonic timestamp when state last changed
     last_checked: float = 0.0  # monotonic timestamp of last poll
+
+
+# ---------------------------------------------------------------------------
+# Cache persistence
+# ---------------------------------------------------------------------------
+
+_CACHE_FILE = ROOT / "pr_tracker" / ".cache" / "amp-status.json"
+
+
+def _wall_to_monotonic(iso: str) -> float:
+    """Convert an ISO wall-clock timestamp to a monotonic offset.
+
+    Returns a monotonic value such that ``time.monotonic() - value``
+    equals the elapsed seconds since the ISO timestamp.
+    """
+    try:
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - dt).total_seconds()
+        return time.monotonic() - max(0, elapsed)
+    except (ValueError, OSError):
+        return time.monotonic()
+
+
+def _monotonic_to_wall(mono: float) -> str:
+    """Convert a monotonic timestamp to an ISO wall-clock string."""
+    elapsed = time.monotonic() - mono
+    dt = datetime.now(timezone.utc) - __import__("datetime").timedelta(seconds=elapsed)
+    return dt.isoformat()
+
+
+def _load_cache() -> dict[int, dict]:
+    """Load cached amp status from disk.  Returns {sid: {state, since}}."""
+    if not _CACHE_FILE.exists():
+        return {}
+    try:
+        data = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {int(k): v for k, v in data.items() if isinstance(v, dict)}
+    except (json.JSONDecodeError, OSError, ValueError):
+        pass
+    return {}
+
+
+def _save_cache(statuses: dict[int, AmpStatus]) -> None:
+    """Persist current amp statuses to disk."""
+    data = {}
+    for sid, status in statuses.items():
+        if status.state in ("idle", "working"):
+            data[str(sid)] = {
+                "state": status.state,
+                "since": _monotonic_to_wall(status.since),
+            }
+    try:
+        _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _CACHE_FILE.write_text(
+            json.dumps(data, indent=2) + "\n", encoding="utf-8",
+        )
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +158,9 @@ def probe_amp_status(session_name: str, window: str | int = "amp") -> str:
 class AmpMonitor:
     """Background thread that polls all active stations' amp windows.
 
+    State timestamps are persisted to ``amp-status.json`` so timers
+    survive TUI restarts.
+
     Usage::
 
         monitor = AmpMonitor()
@@ -107,6 +176,21 @@ class AmpMonitor:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._restore_from_cache()
+
+    def _restore_from_cache(self) -> None:
+        """Load cached state and restore monotonic timestamps."""
+        cached = _load_cache()
+        now = time.monotonic()
+        for sid, entry in cached.items():
+            state = entry.get("state", "unknown")
+            since_iso = entry.get("since", "")
+            if state in ("idle", "working") and since_iso:
+                self._statuses[sid] = AmpStatus(
+                    state=state,
+                    since=_wall_to_monotonic(since_iso),
+                    last_checked=now,
+                )
 
     def start(self) -> None:
         """Start the background polling thread."""
@@ -155,6 +239,7 @@ class AmpMonitor:
         ]
 
         now = time.monotonic()
+        changed = False
 
         for s in active:
             sid = s["id"]
@@ -167,6 +252,7 @@ class AmpMonitor:
                     self._statuses[sid] = AmpStatus(
                         state=new_state, since=now, last_checked=now,
                     )
+                    changed = True
                 else:
                     old.last_checked = now
 
@@ -176,3 +262,9 @@ class AmpMonitor:
             for sid in list(self._statuses):
                 if sid not in active_ids:
                     del self._statuses[sid]
+                    changed = True
+
+        # Persist on state changes
+        if changed:
+            with self._lock:
+                _save_cache(dict(self._statuses))
