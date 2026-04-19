@@ -139,10 +139,36 @@ A full-featured terminal UI built with [Textual](https://textual.textualize.io/)
 # Launch directly
 python -m pr_tracker_tui
 
-# Or use the launcher scripts
-./run_tui.ps1   # Windows
-./run_tui.sh    # Linux/macOS
+# Or use the launcher scripts (recommended — runs inside tmux for session persistence)
+./run_tui.ps1   # Windows (uses psmux)
+./run_tui.sh    # Linux/macOS (uses tmux)
 ```
+
+### tmux Workstations
+
+Stations use tmux sessions for terminal management. Pressing `W` on a PR/issue creates a station and opens a tmux session with a shell + amp window. Prompt presets are automatically injected into amp based on the PR/issue metadata.
+
+**Requirements:**
+- **Windows:** Install [psmux](https://github.com/nicr9/psmux): `winget install psmux`
+- **macOS:** `brew install tmux`
+- **Linux:** `sudo apt install tmux`
+
+**Key bindings (station list):**
+
+| Key | Action |
+|-----|--------|
+| `w` | Open terminal for selected station (creates tmux session if needed) |
+| `W` | Switch tmux client to selected station (single-monitor, in-place) |
+| `f` | Send follow-up prompt to active station's amp window |
+
+**Features:**
+- **Session restore** — closing a terminal window doesn't kill the session; press `w` to reattach
+- **Prompt presets** — auto-injected into amp with PR/issue metadata (configurable in `config/prompt-presets.json`)
+- **Issue flow selection** — choose between "investigate + plan" or "all-in-one" workflows
+- **Follow-up prompts** — send follow-up commands to amp without leaving the TUI
+- **Window dedup** — re-pressing `w` focuses the existing window instead of opening duplicates
+
+Falls back to native terminal launching (Windows Terminal / gnome-terminal / macOS Terminal) if `terminal_backend` is set to `"native"` in config.
 
 ## Configuration
 
@@ -197,6 +223,26 @@ Custom tags applied to PRs/issues. Managed via `tag add/rm/list`.
 ```json
 {
   "ComfyUI#1234": ["urgent", "needs-review"]
+}
+```
+
+### `config/prompt-presets.json` *(committed)*
+
+Templates for prompts injected into amp when opening a station. Supports `{number}`, `{repo}`, `{title}`, `{body_summary}`, `{branch}`, `{station_id}`, `{station_path}` placeholders.
+
+```json
+{
+  "defaults": {
+    "pr": "Review and work on PR #{number} in {repo}. Title: {title}. Summary: {body_summary}",
+    "issue": "Investigate issue #{number} in {repo}: {title}. {body_summary}\n\nInvestigate, then make a plan.",
+    "issue_followup": "Do the work in a new branch. Then commit and push, create a PR, and do a code review.",
+    "issue_full": "Investigate issue #{number} in {repo}: {title}. {body_summary}\n\nInvestigate and make a plan. Then work in a new branch, commit and push, create a PR, and do a code review."
+  },
+  "overrides": {
+    "Comfy-Org/ComfyUI": {
+      "pr": "Custom prompt for ComfyUI PRs..."
+    }
+  }
 }
 ```
 
