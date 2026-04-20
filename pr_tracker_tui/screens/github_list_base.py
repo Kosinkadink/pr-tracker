@@ -1,7 +1,9 @@
 """Base class for GitHub item list screens (PRs and Issues).
 
-Extracts the shared machinery: background worker pattern, DataTable management,
-search filtering, generation counters, tag/pin/people actions, and status bar.
+Extends BaseListScreen with GitHub-specific machinery: people/tracked-author
+filtering, station icons, rate-limit display, tag/pin actions, and streaming
+batch append from background workers.
+
 Subclasses override hooks for columns, row cells, data fetching, and navigation.
 """
 
@@ -12,12 +14,13 @@ from abc import abstractmethod
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Input, LoadingIndicator, Static
 from textual.worker import Worker, WorkerState
 
+from .base_list import BaseListScreen
 
-class GitHubListScreen(Screen):
+
+class GitHubListScreen(BaseListScreen):
     """Abstract base for PR and Issue list screens."""
 
     # Subclasses must define BINDINGS and override the abstract methods below.
@@ -25,38 +28,16 @@ class GitHubListScreen(Screen):
     def __init__(self, repo: str = "") -> None:
         super().__init__()
         self._repo: str = repo
-        self._item_data: list[dict] = []
-        self._filtered: list[int] = []
         self._repo_groups: list[dict] = []
         self._state: str = "open"
-        self._search_text: str = ""
-        self._load_start: float = 0.0
         self._rate_limit: dict | None = None
-        self._fetch_gen: int = 0
         self._people_only: bool = False
         self._people: dict[str, str] = {}
         self._station_items: set[tuple[str, int]] = set()  # (repo, number) pairs with stations
-        self._focused_row_key: str | None = None  # preserved across refreshes
 
     # ------------------------------------------------------------------
     # Abstract hooks — subclasses MUST implement
     # ------------------------------------------------------------------
-
-    @abstractmethod
-    def _column_labels_and_keys(self) -> list[tuple[str, str]]:
-        """Return [(label, key), ...] for table columns."""
-
-    @abstractmethod
-    def _col_keys(self) -> list[str]:
-        """Return the ordered list of column keys (for cell updates)."""
-
-    @abstractmethod
-    def _item_row_cells(self, item: dict) -> tuple:
-        """Return cell values for a single row."""
-
-    @abstractmethod
-    def _item_matches_search(self, item: dict, search: str) -> bool:
-        """Return True if the item matches the search string."""
 
     @abstractmethod
     def _load_cached(self) -> list[dict]:
@@ -75,10 +56,6 @@ class GitHubListScreen(Screen):
     def _save_cache(self, items: list[dict]) -> None:
         """Persist fetched items to cache."""
 
-    @abstractmethod
-    def _item_kind_label(self) -> str:
-        """Plural label for status messages, e.g. 'PRs' or 'issues'."""
-
     def _item_row_key(self, item: dict) -> str:
         """Return a unique row key for a DataTable row. Override for non-numbered items."""
         return f"{item.get('repo', '')}#{item.get('number', item.get('name', '?'))}"
@@ -87,39 +64,15 @@ class GitHubListScreen(Screen):
     def _filter_bar_label(self) -> str:
         """Left-side label for the filter bar, e.g. 'PRs' or 'ISSUES'."""
 
-    @abstractmethod
-    def _update_filter_bar(self) -> None:
-        """Update the filter bar widget content."""
+    def _should_include_item(self, item: dict) -> bool:
+        """Filter by tracked people if enabled."""
+        if self._people_only and self._people:
+            if item.get("author", "").lower() not in self._people:
+                return False
+        return True
 
-    @abstractmethod
-    def _open_detail(self, item: dict) -> None:
-        """Push the detail screen for the selected item."""
-
-    # ------------------------------------------------------------------
-    # Compose & mount
-    # ------------------------------------------------------------------
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Static("", id="filter-bar")
-        search_placeholder = f"Search {self._item_kind_label()}… (Escape to clear)"
-        yield Input(placeholder=search_placeholder, id="search-input")
-        yield LoadingIndicator(id="loading")
-        yield DataTable(id="pr-table")
-        yield Static("", id="status-bar")
-        yield Footer(compact=True, show_command_palette=False)
-
-    def on_mount(self) -> None:
-        table = self.query_one("#pr-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        for label, key in self._column_labels_and_keys():
-            table.add_column(label, key=key)
-        self.query_one("#loading", LoadingIndicator).display = False
-        self.query_one("#search-input", Input).display = False
-        table.focus()
-        self._update_filter_bar()
-        self._load_items()
+    def _table_id(self) -> str:
+        return "pr-table"
 
     def on_screen_resume(self) -> None:
         """Reload station icons when returning from a modal/detail screen."""
@@ -226,18 +179,17 @@ class GitHubListScreen(Screen):
             return
         if replace:
             self._save_cursor()
-            table = self.query_one("#pr-table", DataTable)
+            table = self.query_one(f"#{self._table_id()}", DataTable)
             table.clear()
             self._item_data = []
             self._filtered = []
-        table = self.query_one("#pr-table", DataTable)
+        table = self.query_one(f"#{self._table_id()}", DataTable)
         search = self._search_text.lower()
         for item in items:
             idx = len(self._item_data)
             self._item_data.append(item)
-            if self._people_only and self._people:
-                if item.get("author", "").lower() not in self._people:
-                    continue
+            if not self._should_include_item(item):
+                continue
             if search and not self._item_matches_search(item, search):
                 continue
             self._filtered.append(idx)
@@ -267,97 +219,25 @@ class GitHubListScreen(Screen):
             self._set_status(self._build_status(
                 f"✓ {total} {kind} ({self._state}){filter_str} — loaded in {elapsed:.1f}s{error_str}"
             ))
-        table = self.query_one("#pr-table", DataTable)
+        table = self.query_one(f"#{self._table_id()}", DataTable)
         table.focus()
         self._restore_cursor()
 
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if event.worker.group == "fetch":
-            if event.state == WorkerState.ERROR:
-                self.query_one("#loading", LoadingIndicator).display = False
-                self._set_status(f"❌ Error: {event.worker.error}")
-
-    # ------------------------------------------------------------------
-    # Table filtering
-    # ------------------------------------------------------------------
-
     def _apply_filter(self) -> None:
-        """Rebuild the table with only rows matching the current search."""
-        self._save_cursor()
-        table = self.query_one("#pr-table", DataTable)
-        table.clear()
-        self._filtered = []
-        search = self._search_text.lower()
-
-        for i, item in enumerate(self._item_data):
-            if self._people_only and self._people:
-                if item.get("author", "").lower() not in self._people:
-                    continue
-            if search and not self._item_matches_search(item, search):
-                continue
-            self._filtered.append(i)
-            table.add_row(*self._item_row_cells(item), key=self._item_row_key(item))
-
-        self._restore_cursor()
+        """Rebuild the table, then update status with rate-limit info."""
+        super()._apply_filter()
         total = len(self._item_data)
         shown = len(self._filtered)
         kind = self._item_kind_label()
+        search = self._search_text.lower()
         filter_str = f" ({shown}/{total} shown)" if search else ""
         self._set_status(self._build_status(
             f"✓ {total} {kind} ({self._state}){filter_str}"
         ))
 
     # ------------------------------------------------------------------
-    # Search
+    # GitHub-specific actions
     # ------------------------------------------------------------------
-
-    def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id == "search-input":
-            self._search_text = event.value
-            self._apply_filter()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id == "search-input":
-            self._hide_search()
-
-    def _show_search(self) -> None:
-        search = self.query_one("#search-input", Input)
-        search.display = True
-        search.focus()
-
-    def _hide_search(self) -> None:
-        search = self.query_one("#search-input", Input)
-        search.display = False
-        self.query_one("#pr-table", DataTable).focus()
-
-    def _clear_search(self) -> None:
-        search = self.query_one("#search-input", Input)
-        search.value = ""
-        self._search_text = ""
-        search.display = False
-        self._apply_filter()
-        self.query_one("#pr-table", DataTable).focus()
-
-    def on_key(self, event) -> None:
-        """Handle Escape in search input."""
-        if event.key == "escape":
-            search = self.query_one("#search-input", Input)
-            if search.display:
-                self._clear_search()
-                event.prevent_default()
-                event.stop()
-
-    # ------------------------------------------------------------------
-    # Shared actions
-    # ------------------------------------------------------------------
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        item = self._selected_item()
-        if item:
-            self._open_detail(item)
-
-    def action_refresh(self) -> None:
-        self._load_items()
 
     def action_toggle_state(self) -> None:
         self._state = "closed" if self._state == "open" else "open"
@@ -367,23 +247,6 @@ class GitHubListScreen(Screen):
     def action_switch_repo(self) -> None:
         from .repo_select import RepoSelectScreen
         self.app.switch_screen(RepoSelectScreen())
-
-    def action_open_in_browser(self) -> None:
-        import webbrowser
-        item = self._selected_item()
-        if not item:
-            return
-        url = item.get("url", "")
-        if url:
-            webbrowser.open(url)
-            self.notify(f"Opened {url}")
-
-    def action_search(self) -> None:
-        search = self.query_one("#search-input", Input)
-        if search.display:
-            self._clear_search()
-        else:
-            self._show_search()
 
     def action_manage_tag(self) -> None:
         item = self._selected_item()
@@ -465,60 +328,6 @@ class GitHubListScreen(Screen):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-
-    def _save_cursor(self) -> None:
-        """Remember the row key of the currently focused row."""
-        item = self._selected_item()
-        if item:
-            self._focused_row_key = self._item_row_key(item)
-
-    def _restore_cursor(self) -> None:
-        """Move cursor back to the previously focused row key, if present."""
-        if not self._focused_row_key:
-            return
-        table = self.query_one("#pr-table", DataTable)
-        for i, idx in enumerate(self._filtered):
-            if self._item_row_key(self._item_data[idx]) == self._focused_row_key:
-                table.move_cursor(row=i)
-                return
-
-    def _selected_item(self) -> dict | None:
-        table = self.query_one("#pr-table", DataTable)
-        cursor = table.cursor_row
-        if cursor is not None and 0 <= cursor < len(self._filtered):
-            return self._item_data[self._filtered[cursor]]
-        return None
-
-    def _selected_data_index(self) -> int | None:
-        table = self.query_one("#pr-table", DataTable)
-        cursor = table.cursor_row
-        if cursor is not None and 0 <= cursor < len(self._filtered):
-            return self._filtered[cursor]
-        return None
-
-    def _refresh_selected_row(self) -> None:
-        """Re-render the currently selected row."""
-        from textual.widgets.data_table import CellDoesNotExist
-
-        item = self._selected_item()
-        if not item:
-            return
-        table = self.query_one("#pr-table", DataTable)
-        row_key = self._item_row_key(item)
-        cells = self._item_row_cells(item)
-        for col_key, value in zip(self._col_keys(), cells):
-            try:
-                table.update_cell(row_key, col_key, value)
-            except CellDoesNotExist:
-                return
-
-    def _set_status(self, text: str) -> None:
-        from textual.css.query import NoMatches
-        try:
-            bar = self.query_one("#status-bar", Static)
-        except NoMatches:
-            return
-        bar.update(text)
 
     def _build_status(self, message: str) -> str:
         """Append rate limit info to a status message."""

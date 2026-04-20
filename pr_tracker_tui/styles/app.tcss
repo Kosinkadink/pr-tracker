@@ -4,7 +4,7 @@ Screen {
     background: $surface;
 }
 
-#pr-table {
+#pr-table, #item-table {
     height: 1fr;
 }
 

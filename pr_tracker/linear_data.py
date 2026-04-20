@@ -136,10 +136,11 @@ def fetch_linear_issues(
 
     enriched = [enrich_linear_issue(i) for i in raw_issues]
 
-    # Cache
-    cache_key = "all"
-    if assignee_id:
-        cache_key = f"mine_{assignee_id}"
+    # Cache — key must incorporate filters to avoid poisoning
+    cache_parts = ["mine", assignee_id] if assignee_id else ["all"]
+    if states:
+        cache_parts.append("states_" + "_".join(sorted(states)))
+    cache_key = "_".join(cache_parts)
     save_linear_issue_cache(cache_key, enriched)
 
     return enriched
@@ -208,14 +209,21 @@ def link_pr_to_linear(pr: dict) -> dict:
     """Scan a PR's branch name for a Linear identifier and attach it.
 
     If found, adds ``linear_id`` and ``linear_issue`` (enriched) to the PR dict.
+    Skips the API call entirely if no Linear token is configured.
     Returns the PR dict (mutated in place).
     """
+    from .config import load_linear_token
+
     branch = pr.get("head_ref", "")
     identifier = extract_linear_identifier(branch)
     if not identifier:
         return pr
 
     pr["linear_id"] = identifier
+
+    if not load_linear_token():
+        return pr
+
     try:
         issue = linear_api.fetch_issue_by_identifier(identifier)
         if issue:

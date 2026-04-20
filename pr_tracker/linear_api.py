@@ -9,6 +9,7 @@ from typing import Any
 
 import requests as req
 
+from safe_file import atomic_write
 from .config import load_linear_token
 
 API = "https://api.linear.app/graphql"
@@ -48,9 +49,9 @@ def _cache_get(key: str) -> Any | None:
 def _cache_set(key: str, data: Any) -> None:
     path = _cache_path(key)
     try:
-        path.write_text(
+        atomic_write(
+            path,
             json.dumps({"_ts": time.time(), "data": data}, indent=2) + "\n",
-            encoding="utf-8",
         )
     except OSError:
         pass
@@ -60,7 +61,12 @@ def _query(query: str, variables: dict | None = None, cache_key: str = "") -> di
     """Execute a GraphQL query against the Linear API.
 
     If *cache_key* is provided, results are cached with TTL.
+    Returns empty dict if no token is configured.
     """
+    token = load_linear_token()
+    if not token:
+        return {}
+
     if cache_key:
         cached = _cache_get(cache_key)
         if cached is not None:
@@ -70,7 +76,11 @@ def _query(query: str, variables: dict | None = None, cache_key: str = "") -> di
     if variables:
         body["variables"] = variables
 
-    resp = req.post(API, headers=_headers(), json=body, timeout=30)
+    try:
+        resp = req.post(API, headers=_headers(), json=body, timeout=30)
+    except req.RequestException as e:
+        raise RuntimeError(f"Linear API request failed: {e}")
+
     if resp.status_code != 200:
         raise RuntimeError(f"Linear API HTTP {resp.status_code}")
 
