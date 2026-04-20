@@ -125,8 +125,8 @@ class LinearIssueListScreen(BaseListScreen):
         identifier = item.get("identifier", "")
         indicators = ""
         if identifier in self._station_identifiers:
-            indicators = " 🏗️"
-        id_cell = f"{identifier}{indicators}" if indicators else identifier
+            indicators += "🏗️"
+        id_cell = f"{identifier} {indicators}" if indicators else f"{identifier}   "
 
         return (
             id_cell,
