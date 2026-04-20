@@ -11,5 +11,6 @@
   "linear_teams": [],
   "linear_user_id": "",
   "slack_user_id": "",
-  "slack_team_id": ""
+  "slack_team_id": "",
+  "slack_exclude_channels": []
 }
