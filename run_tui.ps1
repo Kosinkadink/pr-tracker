@@ -44,9 +44,9 @@ if ($tmux) {
         & $tmuxBin send-keys -t pr-tracker:tui "& '$python' -m pr_tracker_tui; exit" Enter
 
         # Apply neutral dark styling
-        & $tmuxBin set -t pr-tracker status-style "bg=#333333,fg=#cccccc" 2>$null
-        & $tmuxBin set -t pr-tracker window-status-style "bg=#333333,fg=#888888" 2>$null
-        & $tmuxBin set -t pr-tracker window-status-current-style "bg=#555555,fg=#ffffff,bold" 2>$null
+        & $tmuxBin set -t pr-tracker status-style "bg=#1e3a5f,fg=#cccccc" 2>$null
+        & $tmuxBin set -t pr-tracker window-status-style "bg=#1e3a5f,fg=#88aacc" 2>$null
+        & $tmuxBin set -t pr-tracker window-status-current-style "bg=#2a5080,fg=#ffffff,bold" 2>$null
         & $tmuxBin set -t pr-tracker status-left "[#S] " 2>$null
         & $tmuxBin set -t pr-tracker status-left-style "fg=#88aaff,bold" 2>$null
         & $tmuxBin set -t pr-tracker status-right "%H:%M" 2>$null

@@ -100,9 +100,9 @@ def _apply_style(session: str) -> None:
     On Linux/macOS, real tmux handles mouse passthrough correctly.
     """
     style_cmds = [
-        ["set", "-t", session, "status-style", "bg=#333333,fg=#cccccc"],
-        ["set", "-t", session, "window-status-style", "bg=#333333,fg=#888888"],
-        ["set", "-t", session, "window-status-current-style", "bg=#555555,fg=#ffffff,bold"],
+        ["set", "-t", session, "status-style", "bg=#1e3a5f,fg=#cccccc"],
+        ["set", "-t", session, "window-status-style", "bg=#1e3a5f,fg=#88aacc"],
+        ["set", "-t", session, "window-status-current-style", "bg=#2a5080,fg=#ffffff,bold"],
         ["set", "-t", session, "status-left", "[#S] "],
         ["set", "-t", session, "status-left-style", "fg=#88aaff,bold"],
         ["set", "-t", session, "status-right", "%H:%M"],
