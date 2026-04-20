@@ -109,6 +109,7 @@ class IssueFlowScreen(StyledModalScreen[str | None]):
         *,
         title: str = "",
         on_prompt_chosen: object = None,
+        preset_types: tuple[str, str] = ("issue", "issue_full"),
     ) -> None:
         super().__init__()
         self._repo = repo
@@ -116,6 +117,8 @@ class IssueFlowScreen(StyledModalScreen[str | None]):
         self._title = title or "Issue Workflow"
         # Callback: fn(prompt_str | None) — called with the final prompt or None
         self._on_prompt_chosen = on_prompt_chosen
+        self._preset_investigate = preset_types[0]
+        self._preset_full = preset_types[1]
 
     def compose(self) -> ComposeResult:
         with Vertical(id="prompt-preview-dialog"):
@@ -150,10 +153,10 @@ class IssueFlowScreen(StyledModalScreen[str | None]):
         )
 
     def action_flow_1(self) -> None:
-        self._resolve_and_show("issue")
+        self._resolve_and_show(self._preset_investigate)
 
     def action_flow_2(self) -> None:
-        self._resolve_and_show("issue_full")
+        self._resolve_and_show(self._preset_full)
 
     def action_skip(self) -> None:
         self.dismiss(None)

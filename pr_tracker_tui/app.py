@@ -307,6 +307,7 @@ class PRTrackerApp(App):
         ref: str | None = None,
         title: str = "",
         body: str = "",
+        linear_identifier: str = "",
     ) -> None:
         """Open existing station, view in-progress job, or create/reuse one.
 
@@ -314,14 +315,32 @@ class PRTrackerApp(App):
         screens don't need to duplicate it.  Pass *ref* for branch-based
         stations (no PR/issue number).  *title* and *body* are stored in
         station metadata for prompt presets.
+
+        *linear_identifier*: if set, matches stations by Linear identifier
+        (e.g. "CORE-73") instead of by issue_number.
         """
         is_pr = pr_number is not None
         number = pr_number if is_pr else issue_number
 
+        def _matches_station(s: dict) -> bool:
+            """Check if a station dict matches the requested item."""
+            if linear_identifier:
+                return s.get("linear_identifier") == linear_identifier
+            if s.get("repo") != repo:
+                return False
+            if number:
+                return (
+                    (is_pr and s.get("pr_number") == number)
+                    or (not is_pr and s.get("issue_number") == number)
+                )
+            return bool(ref and s.get("ref") == ref)
+
         # Check for an in-progress creation job
         for job in self.creation_jobs:
-            if not job.done and job.repo == repo:
-                if number:
+            if not job.done:
+                if linear_identifier:
+                    match = getattr(job, "linear_identifier", "") == linear_identifier
+                elif job.repo == repo and number:
                     match = (
                         (is_pr and job.pr_number == number)
                         or (not is_pr and job.issue_number == number)
@@ -336,16 +355,7 @@ class PRTrackerApp(App):
         # Check for existing station — open terminal
         from pr_tracker.stations import list_stations, find_idle_station
         for s in list_stations():
-            if s.get("repo") != repo:
-                continue
-            if number:
-                match = (
-                    (is_pr and s.get("pr_number") == number)
-                    or (not is_pr and s.get("issue_number") == number)
-                )
-            else:
-                match = bool(ref and s.get("ref") == ref)
-            if match:
+            if _matches_station(s):
                 sid = s["id"]
                 # Ensure title/body are stored (may be missing from older stations)
                 if title and not s.get("title"):
@@ -364,6 +374,9 @@ class PRTrackerApp(App):
                 return
 
         # No station — reuse idle or create new
+        extra = {}
+        if linear_identifier:
+            extra["linear_identifier"] = linear_identifier
         idle = find_idle_station()
         if idle:
             self.reuse_station_background(
@@ -375,6 +388,7 @@ class PRTrackerApp(App):
                 title=title,
                 body=body,
                 open_wt_on_complete=True,
+                **extra,
             )
         else:
             self.create_station_background(
@@ -385,6 +399,7 @@ class PRTrackerApp(App):
                 title=title,
                 body=body,
                 open_wt_on_complete=True,
+                **extra,
             )
 
     def create_station_background(
@@ -397,6 +412,7 @@ class PRTrackerApp(App):
         title: str = "",
         body: str = "",
         open_wt_on_complete: bool = False,
+        linear_identifier: str = "",
     ) -> None:
         """Kick off station creation in a background thread.
 
@@ -404,7 +420,9 @@ class PRTrackerApp(App):
         screen can display it.  Notifications fire on start and completion.
         """
         label = "new station"
-        if pr_number and repo:
+        if linear_identifier:
+            label = f"Linear {linear_identifier}"
+        elif pr_number and repo:
             short = repo.split("/", 1)[1] if "/" in repo else repo
             label = f"{short} PR #{pr_number}"
         elif issue_number and repo:
@@ -419,6 +437,7 @@ class PRTrackerApp(App):
         job = StationCreationJob(
             label=label, repo=repo, pr_number=pr_number, issue_number=issue_number, ref=ref
         )
+        job.linear_identifier = linear_identifier
         self._creation_jobs.append(job)
         self.notify(f"🏗️ Creating station for {label}…")
 
@@ -453,10 +472,17 @@ class PRTrackerApp(App):
                     cancel_event=job.cancel_event,
                 )
                 job.station_id = station["id"]
-                # Store title/body for prompt presets
-                if title or body:
+                # Store title/body/linear_identifier for prompt presets
+                extra_fields = {}
+                if title:
+                    extra_fields["title"] = title
+                if body:
+                    extra_fields["body"] = body
+                if linear_identifier:
+                    extra_fields["linear_identifier"] = linear_identifier
+                if extra_fields:
                     from pr_tracker.stations import update_station
-                    update_station(station["id"], title=title, body=body)
+                    update_station(station["id"], **extra_fields)
                 # If cancel was requested while create_station was finishing,
                 # unregister the station so it doesn't linger.
                 if job.cancel_event.is_set():
@@ -517,6 +543,7 @@ class PRTrackerApp(App):
         title: str = "",
         body: str = "",
         open_wt_on_complete: bool = False,
+        linear_identifier: str = "",
     ) -> None:
         """Reuse an idle station in a background thread.
 
@@ -536,9 +563,16 @@ class PRTrackerApp(App):
                     issue_number=issue_number,
                     ref=ref,
                 )
-                # Store title/body for prompt presets
-                if title or body:
-                    update_station(station["id"], title=title, body=body)
+                # Store title/body/linear_identifier for prompt presets
+                extra_fields = {}
+                if title:
+                    extra_fields["title"] = title
+                if body:
+                    extra_fields["body"] = body
+                if linear_identifier:
+                    extra_fields["linear_identifier"] = linear_identifier
+                if extra_fields:
+                    update_station(station["id"], **extra_fields)
                 if open_wt_on_complete:
                     try:
                         from pr_tracker_tui.screens.station_activate import activate_and_open_wt

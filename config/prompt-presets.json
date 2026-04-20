@@ -3,7 +3,9 @@
     "pr": "Review and work on PR #{number} in {repo}. Title: {title}. Summary: {body_summary}",
     "issue": "Investigate issue #{number} in {repo}: {title}. {body_summary}\n\nInvestigate, then make a plan.",
     "issue_followup": "Do the work in a new branch. Then commit and push, create a PR, and do a code review.",
-    "issue_full": "Investigate issue #{number} in {repo}: {title}. {body_summary}\n\nInvestigate and make a plan. Then work in a new branch, commit and push, create a PR, and do a code review."
+    "issue_full": "Investigate issue #{number} in {repo}: {title}. {body_summary}\n\nInvestigate and make a plan. Then work in a new branch, commit and push, create a PR, and do a code review.",
+    "linear_issue": "Investigate Linear issue {identifier}: {title}. {body_summary}\n\nInvestigate, then make a plan.",
+    "linear_issue_full": "Investigate Linear issue {identifier}: {title}. {body_summary}\n\nInvestigate and make a plan. Then work in a new branch, commit and push, create a PR, and do a code review."
   },
   "overrides": {}
 }

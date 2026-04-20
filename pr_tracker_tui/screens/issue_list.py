@@ -26,6 +26,7 @@ class IssueListScreen(GitHubListScreen):
         Binding("slash", "search", "Search"),
         Binding("w", "station_list", "Stations"),
         Binding("W", "create_station", "New Station"),
+        Binding("L", "switch_to_linear", "Linear"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -38,6 +39,19 @@ class IssueListScreen(GitHubListScreen):
             ["#", "Title", "Author", "State", "Labels", "Updated", "Created", "Comments", "Tags"],
             COL_KEYS,
         ))
+
+    def _column_kwargs(self) -> dict[str, dict]:
+        return {
+            "num": {"width": 10},
+            "title": {"width": 50},
+            "author": {"width": 18},
+            "state": {"width": 7},
+            "labels": {"width": 20},
+            "updated": {"width": 8},
+            "created": {"width": 8},
+            "comments": {"width": 8},
+            "tags": {"width": 12},
+        }
 
     def _col_keys(self) -> list[str]:
         return COL_KEYS
@@ -73,7 +87,7 @@ class IssueListScreen(GitHubListScreen):
             indicators += "📌"
         if self._has_station(item):
             indicators += "🏗️"
-        num_str = f"{item['number']} {indicators}" if indicators else f"{item['number']}   "
+        num_str = f"{item['number']} {indicators}" if indicators else str(item["number"])
 
         comment_count = item.get("comment_count", item.get("comments", 0))
         if isinstance(comment_count, int):
@@ -176,3 +190,7 @@ class IssueListScreen(GitHubListScreen):
     def action_switch_to_branches(self) -> None:
         from .branch_list import BranchListScreen
         self.app.switch_screen(BranchListScreen(repo=self._repo))
+
+    def action_switch_to_linear(self) -> None:
+        from .linear_issue_list import LinearIssueListScreen
+        self.app.switch_screen(LinearIssueListScreen())

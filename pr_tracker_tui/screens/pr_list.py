@@ -36,6 +36,7 @@ class PRListScreen(GitHubListScreen):
         Binding("w", "station_list", "Stations"),
         Binding("W", "create_station", "New Station"),
         Binding("l", "toggle_log", "Log"),
+        Binding("L", "switch_to_linear", "Linear"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -65,6 +66,21 @@ class PRListScreen(GitHubListScreen):
             ["#", "Title", "Author", "State", "Labels", "CI", "Behind", "Updated", "Created", "Reply", "Tags"],
             COL_KEYS,
         ))
+
+    def _column_kwargs(self) -> dict[str, dict]:
+        return {
+            "num": {"width": 10},
+            "title": {"width": 50},
+            "author": {"width": 20},
+            "state": {"width": 7},
+            "labels": {"width": 16},
+            "ci": {"width": 10},
+            "behind": {"width": 10},
+            "updated": {"width": 7},
+            "created": {"width": 7},
+            "reply": {"width": 7},
+            "tags": {"width": 12},
+        }
 
     def _col_keys(self) -> list[str]:
         return COL_KEYS
@@ -139,7 +155,7 @@ class PRListScreen(GitHubListScreen):
             indicators += "🚀"
         if self._has_remote_deploy(item):
             indicators += "🌐?" if self.app.remote_deploys_stale else "🌐"
-        num_str = f"{item['number']} {indicators}" if indicators else f"{item['number']}   "
+        num_str = f"{item['number']} {indicators}" if indicators else str(item["number"])
 
         return (
             num_str,
@@ -263,7 +279,7 @@ class PRListScreen(GitHubListScreen):
 
         table = self.query_one("#pr-table")
         row_key = f"{pr.get('repo', '')}#{pr['number']}"
-        cells = self._item_row_cells(pr)
+        cells = self._coerce_row_cells(self._item_row_cells(pr))
         for col_key, value in zip(COL_KEYS, cells):
             try:
                 table.update_cell(row_key, col_key, value)
@@ -355,6 +371,10 @@ class PRListScreen(GitHubListScreen):
     def action_switch_to_branches(self) -> None:
         from .branch_list import BranchListScreen
         self.app.switch_screen(BranchListScreen(repo=self._repo))
+
+    def action_switch_to_linear(self) -> None:
+        from .linear_issue_list import LinearIssueListScreen
+        self.app.switch_screen(LinearIssueListScreen())
 
     def action_deploy(self) -> None:
         pr = self._selected_item()

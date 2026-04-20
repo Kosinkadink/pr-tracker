@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PEOPLE_FILE = ROOT / "config" / "people.json"
 TAGS_FILE = ROOT / "config" / "pr-tags.json"
 TRACKER_CONFIG_FILE = ROOT / "config" / "pr-tracker.json"
+LINEAR_TOKEN_FILE = ROOT / "lineartoken.txt"
+SLACK_TOKEN_FILE = ROOT / "slacktoken.txt"
 
 # Default repos to scan for PRs/issues authored by tracked people
 DEFAULT_REPOS: list[str] = ["Comfy-Org/ComfyUI"]
@@ -124,3 +126,65 @@ def save_runner_servers(servers: list[dict]) -> None:
     config["runner_servers"] = servers
     config.pop("runner_url", None)
     save_tracker_config(config)
+
+
+# ---------------------------------------------------------------------------
+# Linear integration config
+# ---------------------------------------------------------------------------
+
+def load_linear_token() -> str:
+    """Read Linear API token from lineartoken.txt. Returns empty string if missing."""
+    if not LINEAR_TOKEN_FILE.exists():
+        return ""
+    try:
+        return LINEAR_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def load_linear_config() -> dict:
+    """Return Linear-related config from pr-tracker.json.
+
+    Keys:
+        linear_teams: list of team keys/names to track (e.g. ["Core Engine", "Desktop"])
+        linear_user_id: your Linear user ID (for "assigned to me" queries)
+    """
+    config = load_tracker_config()
+    return {
+        "linear_teams": config.get("linear_teams", []),
+        "linear_user_id": config.get("linear_user_id", ""),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Slack integration config
+# ---------------------------------------------------------------------------
+
+def load_slack_token() -> str:
+    """Read Slack user token from slacktoken.txt. Returns empty string if missing."""
+    if not SLACK_TOKEN_FILE.exists():
+        return ""
+    try:
+        return SLACK_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def load_slack_config() -> dict:
+    """Return Slack-related config from pr-tracker.json.
+
+    Keys:
+        slack_user_id: your Slack member ID (for @mention search)
+        slack_team_id: your Slack workspace/team ID (for deep links)
+        slack_action_keywords: list of phrases that flag actionable mentions
+    """
+    config = load_tracker_config()
+    return {
+        "slack_user_id": config.get("slack_user_id", ""),
+        "slack_team_id": config.get("slack_team_id", ""),
+        "slack_action_keywords": config.get("slack_action_keywords", [
+            "ready to merge", "please review", "needs review",
+            "approved", "LGTM", "merge this", "can you review", "take a look",
+        ]),
+        "slack_exclude_channels": config.get("slack_exclude_channels", []),
+    }
