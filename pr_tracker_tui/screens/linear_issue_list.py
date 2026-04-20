@@ -104,6 +104,17 @@ class LinearIssueListScreen(BaseListScreen):
     def _column_labels_and_keys(self) -> list[tuple[str, str]]:
         return list(_COL_LABELS_KEYS)
 
+    def _column_kwargs(self) -> dict[str, dict]:
+        return {
+            "id": {"width": 14},
+            "title": {"width": 50},
+            "state": {"width": 14},
+            "priority": {"width": 10},
+            "assignee": {"width": 18},
+            "team": {"width": 8},
+            "updated": {"width": 8},
+        }
+
     def _col_keys(self) -> list[str]:
         return list(_COL_KEYS)
 
@@ -126,7 +137,7 @@ class LinearIssueListScreen(BaseListScreen):
         indicators = ""
         if identifier in self._station_identifiers:
             indicators += "🏗️"
-        id_cell = f"{identifier} {indicators}" if indicators else f"{identifier}   "
+        id_cell = f"{identifier} {indicators}" if indicators else identifier
 
         return (
             id_cell,

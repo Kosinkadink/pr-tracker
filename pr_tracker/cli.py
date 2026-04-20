@@ -16,7 +16,7 @@ from .data import (
     get_runner_status,
     parse_ref,
 )
-from .display import console as display_console, render_issue_table, render_linear_issue_table, render_pr_table, render_rate_limit
+from .display import console as display_console, render_issue_table, render_linear_issue_table, render_pr_table, render_rate_limit, render_slack_mention_table
 from .tags import add_tag, remove_tag, list_all_tags
 
 console = Console()
@@ -303,6 +303,47 @@ def cmd_linear_teams(args: argparse.Namespace) -> None:
         console.print(f"  [bold]{t['key']:8s}[/bold] {t['name']}")
 
 
+# ---------------------------------------------------------------------------
+# Slack commands
+# ---------------------------------------------------------------------------
+
+def cmd_slack(args: argparse.Namespace) -> None:
+    """Route Slack subcommands."""
+    action = getattr(args, "slack_action", None)
+    if not action:
+        console.print("[red]Usage: pr_tracker slack {mentions|search}[/red]")
+        return
+    action(args)
+
+
+def cmd_slack_mentions(args: argparse.Namespace) -> None:
+    """List recent Slack mentions."""
+    from .config import load_slack_config
+    from .slack_data import fetch_mentions
+
+    config = load_slack_config()
+    if not config.get("slack_user_id"):
+        console.print("[red]No slack_user_id configured in pr-tracker.json[/red]")
+        return
+
+    hours = args.hours or 24
+    console.print(f"[dim]Fetching Slack mentions (last {hours}h)...[/dim]")
+    mentions = fetch_mentions(since_hours=hours, actions_only=args.actions)
+
+    title = "Actionable Mentions" if args.actions else f"Mentions (last {hours}h)"
+    render_slack_mention_table(mentions, title=title)
+
+
+def cmd_slack_search(args: argparse.Namespace) -> None:
+    """Search Slack messages."""
+    from .slack_data import search_slack
+
+    query = args.query
+    console.print(f"[dim]Searching Slack for '{query}'...[/dim]")
+    results = search_slack(query, count=args.count)
+    render_slack_mention_table(results, title=f"Search: {query}")
+
+
 def cmd_repo(args: argparse.Namespace) -> None:
     """Add or remove a repo from the tracked list."""
     config = load_tracker_config()
@@ -503,6 +544,21 @@ def main(argv: list[str] | None = None) -> None:
 
     p_linear_teams = linear_sub.add_parser("teams", help="List available Linear teams")
     p_linear_teams.set_defaults(linear_action=cmd_linear_teams)
+
+    # Slack
+    p_slack = sub.add_parser("slack", help="Slack mention tracking")
+    p_slack.set_defaults(func=cmd_slack)
+    slack_sub = p_slack.add_subparsers(dest="slack_cmd")
+
+    p_slack_mentions = slack_sub.add_parser("mentions", aliases=["m"], help="List recent @mentions")
+    p_slack_mentions.add_argument("--hours", "-H", type=int, default=24, help="Look back N hours (default: 24)")
+    p_slack_mentions.add_argument("--actions", "-a", action="store_true", help="Only show actionable mentions")
+    p_slack_mentions.set_defaults(slack_action=cmd_slack_mentions)
+
+    p_slack_search = slack_sub.add_parser("search", aliases=["s"], help="Search Slack messages")
+    p_slack_search.add_argument("query", help="Search query")
+    p_slack_search.add_argument("--count", "-c", type=int, default=20, help="Number of results")
+    p_slack_search.set_defaults(slack_action=cmd_slack_search)
 
     # Rate limit
     p_rate = sub.add_parser("rate", help="Show GitHub API rate limit")

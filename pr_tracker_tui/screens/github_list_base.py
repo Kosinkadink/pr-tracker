@@ -193,7 +193,7 @@ class GitHubListScreen(BaseListScreen):
             if search and not self._item_matches_search(item, search):
                 continue
             self._filtered.append(idx)
-            table.add_row(*self._item_row_cells(item), key=self._item_row_key(item))
+            table.add_row(*self._coerce_row_cells(self._item_row_cells(item)), key=self._item_row_key(item))
         self._restore_cursor()
         if not getattr(self, "_enriching", False):
             elapsed = time.monotonic() - self._load_start

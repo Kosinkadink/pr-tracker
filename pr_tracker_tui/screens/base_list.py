@@ -37,7 +37,10 @@ class BaseListScreen(Screen):
 
     @abstractmethod
     def _column_labels_and_keys(self) -> list[tuple[str, str]]:
-        """Return [(label, key), ...] for table columns."""
+        """Return [(label, key), ...] for table columns.
+
+        For column width control, override ``_column_kwargs`` instead.
+        """
 
     @abstractmethod
     def _col_keys(self) -> list[str]:
@@ -46,6 +49,18 @@ class BaseListScreen(Screen):
     @abstractmethod
     def _item_row_cells(self, item: dict) -> tuple:
         """Return cell values for a single row."""
+
+    def _coerce_row_cells(self, cells: tuple) -> tuple:
+        """Wrap raw strings in Text to avoid re-parsing via Text.from_markup.
+
+        Textual's DataTable runs ``Text.from_markup`` on plain ``str`` cells
+        every time the render cache is invalidated (e.g. cursor move).  This
+        can measure differently across renders, causing a 1-char jitter.
+        Pre-wrapping in ``Text`` makes the renderable path deterministic.
+        """
+        return tuple(
+            Text(c) if isinstance(c, str) else c for c in cells
+        )
 
     @abstractmethod
     def _item_matches_search(self, item: dict, search: str) -> bool:
@@ -75,6 +90,14 @@ class BaseListScreen(Screen):
     def _should_include_item(self, item: dict) -> bool:
         """Return True if the item passes non-search filters (people, state, etc.)."""
 
+    def _column_kwargs(self) -> dict[str, dict]:
+        """Return {col_key: {kwarg: value}} for add_column overrides.
+
+        Subclasses can return width, min_width, max_width, etc. per column.
+        Keys not present here get no extra kwargs.
+        """
+        return {}
+
     # ------------------------------------------------------------------
     # Table ID — override in subclass if needed
     # ------------------------------------------------------------------
@@ -101,8 +124,9 @@ class BaseListScreen(Screen):
         table = self.query_one(f"#{self._table_id()}", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
+        col_kwargs = self._column_kwargs()
         for label, key in self._column_labels_and_keys():
-            table.add_column(label, key=key)
+            table.add_column(label, key=key, **col_kwargs.get(key, {}))
         self.query_one("#loading", LoadingIndicator).display = False
         self.query_one("#search-input", Input).display = False
         table.focus()
@@ -127,7 +151,7 @@ class BaseListScreen(Screen):
             if search and not self._item_matches_search(item, search):
                 continue
             self._filtered.append(i)
-            table.add_row(*self._item_row_cells(item), key=self._item_row_key(item))
+            table.add_row(*self._coerce_row_cells(self._item_row_cells(item)), key=self._item_row_key(item))
 
         self._restore_cursor()
 
@@ -195,14 +219,18 @@ class BaseListScreen(Screen):
         table = self.query_one(f"#{self._table_id()}", DataTable)
         cursor = table.cursor_row
         if cursor is not None and 0 <= cursor < len(self._filtered):
-            return self._item_data[self._filtered[cursor]]
+            idx = self._filtered[cursor]
+            if idx < len(self._item_data):
+                return self._item_data[idx]
         return None
 
     def _selected_data_index(self) -> int | None:
         table = self.query_one(f"#{self._table_id()}", DataTable)
         cursor = table.cursor_row
         if cursor is not None and 0 <= cursor < len(self._filtered):
-            return self._filtered[cursor]
+            idx = self._filtered[cursor]
+            if idx < len(self._item_data):
+                return idx
         return None
 
     def _refresh_selected_row(self) -> None:
@@ -214,7 +242,7 @@ class BaseListScreen(Screen):
             return
         table = self.query_one(f"#{self._table_id()}", DataTable)
         row_key = self._item_row_key(item)
-        cells = self._item_row_cells(item)
+        cells = self._coerce_row_cells(self._item_row_cells(item))
         for col_key, value in zip(self._col_keys(), cells):
             try:
                 table.update_cell(row_key, col_key, value)

@@ -38,6 +38,14 @@ class BranchListScreen(GitHubListScreen):
             COL_KEYS,
         ))
 
+    def _column_kwargs(self) -> dict[str, dict]:
+        return {
+            "branch": {"width": 40},
+            "commit": {"width": 10},
+            "protected": {"width": 10},
+            "repo": {"width": 20},
+        }
+
     def _col_keys(self) -> list[str]:
         return COL_KEYS
 

@@ -186,4 +186,5 @@ def load_slack_config() -> dict:
             "ready to merge", "please review", "needs review",
             "approved", "LGTM", "merge this", "can you review", "take a look",
         ]),
+        "slack_exclude_channels": config.get("slack_exclude_channels", []),
     }

@@ -17,6 +17,7 @@ class RepoSelectScreen(Screen):
         Binding("w", "station_list", "Stations"),
         Binding("d", "deploys", "Deploys"),
         Binding("L", "linear_issues", "Linear"),
+        Binding("S", "slack_mentions", "Slack"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -59,6 +60,10 @@ class RepoSelectScreen(Screen):
     def action_linear_issues(self) -> None:
         from .linear_issue_list import LinearIssueListScreen
         self.app.switch_screen(LinearIssueListScreen())
+
+    def action_slack_mentions(self) -> None:
+        from .mention_list import MentionListScreen
+        self.app.switch_screen(MentionListScreen())
 
     def action_quit(self) -> None:
         self.app.exit()

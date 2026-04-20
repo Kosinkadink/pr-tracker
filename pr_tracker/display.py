@@ -219,6 +219,53 @@ def render_linear_issue_table(
     console.print()
 
 
+def render_slack_mention_table(
+    items: list[dict[str, Any]],
+    *,
+    title: str = "Slack Mentions",
+) -> None:
+    """Render a table of enriched Slack mention dicts."""
+    if not items:
+        console.print("[dim]No Slack mentions found[/dim]")
+        return
+
+    table = Table(title=title, show_lines=False, pad_edge=False)
+    table.add_column("Channel", style="bold", width=20)
+    table.add_column("From", style="blue", width=18)
+    table.add_column("Message", min_width=30, max_width=60, no_wrap=True, overflow="ellipsis")
+    table.add_column("Links", width=8)
+    table.add_column("When", width=8, justify="right")
+
+    for m in items:
+        gh_types = m.get("gh_link_types", [])
+        merged = m.get("merged", False)
+        if gh_types:
+            icons = {"pr": "PR", "issue": "#", "branch": "B"}
+            parts = []
+            for t in gh_types:
+                label = icons.get(t, t)
+                if t == "pr" and merged:
+                    label += " ✓"
+                parts.append(label)
+            links_cell = Text(" ".join(parts), style="green")
+        else:
+            links_cell = Text("-", style="dim")
+        permalink = m.get("permalink", "")
+        channel = Text(f"#{m.get('channel_name', '?')}", style=f"bold link {permalink}" if permalink else "bold")
+
+        table.add_row(
+            channel,
+            m.get("author_name", "?"),
+            m.get("text_preview", ""),
+            links_cell,
+            m.get("time_ago", "-"),
+        )
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
 def render_rate_limit(info: dict[str, Any]) -> None:
     """Show current GitHub API rate limit from an enriched dict."""
     remaining = info.get("remaining", "?")
