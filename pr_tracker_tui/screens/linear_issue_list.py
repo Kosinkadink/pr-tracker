@@ -79,10 +79,27 @@ class LinearIssueListScreen(BaseListScreen):
         super().__init__()
         self._mine_only: bool = True
         self._state_filter_idx: int = 0  # index into _STATE_FILTERS
+        self._station_identifiers: set[str] = set()  # Linear identifiers with stations
 
     # ------------------------------------------------------------------
     # BaseListScreen hooks
     # ------------------------------------------------------------------
+
+    def on_screen_resume(self) -> None:
+        self._load_station_identifiers()
+        self._apply_filter()
+
+    def _load_station_identifiers(self) -> None:
+        """Load the set of Linear identifiers that have stations."""
+        self._station_identifiers = set()
+        try:
+            from pr_tracker.stations import list_stations
+            for s in list_stations():
+                lid = s.get("linear_identifier", "")
+                if lid:
+                    self._station_identifiers.add(lid)
+        except Exception:
+            pass
 
     def _column_labels_and_keys(self) -> list[tuple[str, str]]:
         return list(_COL_LABELS_KEYS)
@@ -105,8 +122,14 @@ class LinearIssueListScreen(BaseListScreen):
         return search in " ".join(fields).lower()
 
     def _item_row_cells(self, item: dict) -> tuple:
+        identifier = item.get("identifier", "")
+        indicators = ""
+        if identifier in self._station_identifiers:
+            indicators = " 🏗️"
+        id_cell = f"{identifier}{indicators}" if indicators else identifier
+
         return (
-            item.get("identifier", ""),
+            id_cell,
             item.get("title", "")[:60],
             _state_cell(item),
             _priority_cell(item),
@@ -158,6 +181,7 @@ class LinearIssueListScreen(BaseListScreen):
     def _load_items(self) -> None:
         self._load_start = time.monotonic()
         self._fetch_gen += 1
+        self._load_station_identifiers()
         self._save_cursor()
 
         table = self.query_one(f"#{self._table_id()}", DataTable)
@@ -261,6 +285,9 @@ class LinearIssueListScreen(BaseListScreen):
             body=item.get("body", ""),
             linear_identifier=identifier,
         )
+        # Immediately show the station icon on the current row
+        self._station_identifiers.add(identifier)
+        self._refresh_selected_row()
 
     def action_go_back(self) -> None:
         from .repo_select import RepoSelectScreen
