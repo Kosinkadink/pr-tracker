@@ -37,6 +37,16 @@ _BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
             "in a new branch, commit and push, create a PR, and do "
             "a code review."
         ),
+        "linear_issue": (
+            "Investigate Linear issue {identifier}: {title}. "
+            "{body_summary}\n\nInvestigate, then make a plan."
+        ),
+        "linear_issue_full": (
+            "Investigate Linear issue {identifier}: {title}. "
+            "{body_summary}\n\nInvestigate and make a plan. Then work "
+            "in a new branch, commit and push, create a PR, and do "
+            "a code review."
+        ),
     },
     "overrides": {},
 }
@@ -162,6 +172,7 @@ def resolve_preset(
 
     variables: dict[str, str] = {
         "number": str(data.get("number", "")),
+        "identifier": str(data.get("identifier", "")),
         "repo": repo,
         "title": str(data.get("title", "")),
         "body_summary": body_summary,

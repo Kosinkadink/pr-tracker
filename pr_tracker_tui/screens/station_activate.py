@@ -109,6 +109,7 @@ def _station_preset_data(station: dict) -> dict:
     """Build the template variable dict from station metadata."""
     return {
         "number": station.get("pr_number") or station.get("issue_number") or "",
+        "identifier": station.get("linear_identifier", ""),
         "title": station.get("title", ""),
         "body": station.get("body", ""),
         "branch": station.get("ref", ""),
@@ -123,6 +124,9 @@ def _station_title(station: dict) -> str:
     repo = station.get("repo", "")
     pr = station.get("pr_number")
     issue = station.get("issue_number")
+    linear = station.get("linear_identifier", "")
+    if linear:
+        return f"Station {sid} — {linear}"
     if pr and repo:
         short = repo.split("/", 1)[1] if "/" in repo else repo
         return f"Station {sid} — {short} PR #{pr}"
@@ -196,7 +200,9 @@ def _send_prompt_to_amp(screen: Screen, station: dict, prompt: str) -> None:
 
 
 def _has_prompt_preview(station: dict) -> bool:
-    """Return True if the station has a PR/issue that would show a prompt preview."""
+    """Return True if the station has a PR/issue/Linear item that would show a prompt preview."""
+    if station.get("linear_identifier"):
+        return True
     return bool(
         station.get("repo")
         and (station.get("pr_number") or station.get("issue_number"))
@@ -204,21 +210,35 @@ def _has_prompt_preview(station: dict) -> bool:
 
 
 def _show_prompt_preview(screen: Screen, station: dict) -> None:
-    """Show the appropriate prompt flow for the station's PR or issue."""
-    repo = station.get("repo")
-    if not repo:
-        return
-
+    """Show the appropriate prompt flow for the station's PR, issue, or Linear item."""
+    repo = station.get("repo", "")
     pr = station.get("pr_number")
     issue = station.get("issue_number")
-    if not pr and not issue:
+    linear = station.get("linear_identifier", "")
+
+    if not pr and not issue and not linear:
         return
 
     title = _station_title(station)
     data = _station_preset_data(station)
 
-    if issue:
-        # Issues get a flow selection screen (investigate vs all-in-one)
+    if linear:
+        # Linear issues get a flow selection (same UX as GitHub issues)
+        from .prompt_preview import IssueFlowScreen
+
+        def _on_linear_prompt_chosen(result: str | None) -> None:
+            if result is not None:
+                _send_prompt_to_amp(screen, station, result)
+
+        screen.app.push_screen(
+            IssueFlowScreen(
+                repo, data, title=title,
+                on_prompt_chosen=_on_linear_prompt_chosen,
+                preset_types=("linear_issue", "linear_issue_full"),
+            ),
+        )
+    elif issue:
+        # GitHub issues get a flow selection screen (investigate vs all-in-one)
         from .prompt_preview import IssueFlowScreen
 
         def _on_prompt_chosen(result: str | None) -> None:

@@ -69,6 +69,8 @@ class LinearIssueListScreen(BaseListScreen):
         Binding("s", "cycle_state", "State"),
         Binding("g", "open_in_browser", "Browser"),
         Binding("slash", "search", "Search"),
+        Binding("w", "station_list", "Stations"),
+        Binding("W", "create_station", "New Station"),
         Binding("q", "go_back", "Repos"),
         Binding("i", "switch_to_issues", "GH Issues"),
     ]
@@ -236,6 +238,29 @@ class LinearIssueListScreen(BaseListScreen):
         self._state_filter_idx = (self._state_filter_idx + 1) % len(_STATE_FILTERS)
         self._update_filter_bar()
         self._apply_filter()
+
+    def action_station_list(self) -> None:
+        from .station_list import StationListScreen
+        self.app.push_screen(StationListScreen())
+
+    def action_create_station(self) -> None:
+        """W key: create/reuse station for the selected Linear issue."""
+        item = self._selected_item()
+        if not item:
+            self.notify("No item selected")
+            return
+
+        identifier = item.get("identifier", "")
+        if not identifier:
+            self.notify("No Linear identifier")
+            return
+
+        self.app.open_or_create_station(
+            repo="",
+            title=item.get("title", ""),
+            body=item.get("body", ""),
+            linear_identifier=identifier,
+        )
 
     def action_go_back(self) -> None:
         from .repo_select import RepoSelectScreen
