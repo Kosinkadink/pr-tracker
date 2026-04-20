@@ -36,6 +36,7 @@ class PRListScreen(GitHubListScreen):
         Binding("w", "station_list", "Stations"),
         Binding("W", "create_station", "New Station"),
         Binding("l", "toggle_log", "Log"),
+        Binding("L", "switch_to_linear", "Linear"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -355,6 +356,10 @@ class PRListScreen(GitHubListScreen):
     def action_switch_to_branches(self) -> None:
         from .branch_list import BranchListScreen
         self.app.switch_screen(BranchListScreen(repo=self._repo))
+
+    def action_switch_to_linear(self) -> None:
+        from .linear_issue_list import LinearIssueListScreen
+        self.app.switch_screen(LinearIssueListScreen())
 
     def action_deploy(self) -> None:
         pr = self._selected_item()

@@ -7,5 +7,9 @@
     "docs",
     "workflow_templates"
   ],
-  "runner_servers": []
+  "runner_servers": [],
+  "linear_teams": [],
+  "linear_user_id": "",
+  "slack_user_id": "",
+  "slack_team_id": ""
 }

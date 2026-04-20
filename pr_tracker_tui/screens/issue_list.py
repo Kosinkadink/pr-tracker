@@ -26,6 +26,7 @@ class IssueListScreen(GitHubListScreen):
         Binding("slash", "search", "Search"),
         Binding("w", "station_list", "Stations"),
         Binding("W", "create_station", "New Station"),
+        Binding("L", "switch_to_linear", "Linear"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -176,3 +177,7 @@ class IssueListScreen(GitHubListScreen):
     def action_switch_to_branches(self) -> None:
         from .branch_list import BranchListScreen
         self.app.switch_screen(BranchListScreen(repo=self._repo))
+
+    def action_switch_to_linear(self) -> None:
+        from .linear_issue_list import LinearIssueListScreen
+        self.app.switch_screen(LinearIssueListScreen())

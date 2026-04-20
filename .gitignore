@@ -7,3 +7,5 @@ config/stations.json
 config/people.json
 config/pr-tracker.json
 githubtoken.txt
+lineartoken.txt
+slacktoken.txt

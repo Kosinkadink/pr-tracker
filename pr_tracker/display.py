@@ -162,6 +162,63 @@ def render_issue_table(
     console.print()
 
 
+def _linear_state_text(state_name: str, state_type: str = "") -> Text:
+    """Render a Linear issue state with color."""
+    colors = {
+        "started": "yellow",
+        "unstarted": "blue",
+        "backlog": "dim",
+        "completed": "green",
+        "cancelled": "red",
+    }
+    style = colors.get(state_type, "white")
+    return Text(state_name, style=style)
+
+
+def _linear_priority_text(label: str) -> Text:
+    colors = {"Urgent": "red bold", "High": "red", "Medium": "yellow", "Low": "dim", "No priority": "dim"}
+    return Text(label, style=colors.get(label, "white"))
+
+
+def render_linear_issue_table(
+    items: list[dict[str, Any]],
+    *,
+    title: str = "Linear Issues",
+) -> None:
+    """Render a table of enriched Linear issue dicts."""
+    if not items:
+        console.print("[dim]No Linear issues found[/dim]")
+        return
+
+    table = Table(title=title, show_lines=False, pad_edge=False)
+    table.add_column("ID", style="bold", width=12)
+    table.add_column("Title", min_width=30, max_width=55, no_wrap=True, overflow="ellipsis")
+    table.add_column("State", width=14)
+    table.add_column("Priority", width=10)
+    table.add_column("Assignee", style="blue", width=18)
+    table.add_column("Team", width=8)
+    table.add_column("Updated", width=8, justify="right")
+
+    for issue in items:
+        url = issue.get("url", "")
+        id_link = Text(issue.get("identifier", ""), style=f"bold link {url}")
+        title_link = Text(issue.get("title", ""), style=f"link {url}")
+
+        table.add_row(
+            id_link,
+            title_link,
+            _linear_state_text(issue.get("state_name", ""), issue.get("state_type", "")),
+            _linear_priority_text(issue.get("priority_label", "")),
+            issue.get("assignee", "") or "-",
+            issue.get("team_key", ""),
+            issue.get("updated_ago", "-"),
+        )
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
 def render_rate_limit(info: dict[str, Any]) -> None:
     """Show current GitHub API rate limit from an enriched dict."""
     remaining = info.get("remaining", "?")

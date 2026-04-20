@@ -16,7 +16,7 @@ from .data import (
     get_runner_status,
     parse_ref,
 )
-from .display import console as display_console, render_issue_table, render_pr_table, render_rate_limit
+from .display import console as display_console, render_issue_table, render_linear_issue_table, render_pr_table, render_rate_limit
 from .tags import add_tag, remove_tag, list_all_tags
 
 console = Console()
@@ -200,6 +200,109 @@ def cmd_rate(args: argparse.Namespace) -> None:
     render_rate_limit(info)
 
 
+# ---------------------------------------------------------------------------
+# Linear commands
+# ---------------------------------------------------------------------------
+
+def cmd_linear(args: argparse.Namespace) -> None:
+    """Route Linear subcommands."""
+    action = getattr(args, "linear_action", None)
+    if not action:
+        console.print("[red]Usage: pr_tracker linear {list|show|teams}[/red]")
+        return
+    action(args)
+
+
+def cmd_linear_list(args: argparse.Namespace) -> None:
+    """List Linear issues for configured teams."""
+    from .config import load_linear_config
+    from .linear_data import fetch_linear_issues, fetch_my_linear_issues
+
+    config = load_linear_config()
+    if not config.get("linear_teams"):
+        console.print("[red]No linear_teams configured in pr-tracker.json[/red]")
+        return
+
+    # Map state filter names to Linear state types
+    state_map = {
+        "todo": ["unstarted"],
+        "in-progress": ["started"],
+        "done": ["completed"],
+        "backlog": ["backlog"],
+        "cancelled": ["cancelled"],
+        "active": ["unstarted", "started"],
+        "all": None,
+    }
+    states = state_map.get(args.state, ["unstarted", "started", "backlog"]) if args.state else None
+
+    team_names = [args.team] if args.team else None
+
+    console.print("[dim]Fetching Linear issues...[/dim]")
+    if args.mine:
+        issues = fetch_my_linear_issues(states=states, first=50)
+    else:
+        issues = fetch_linear_issues(team_names=team_names, states=states, first=50)
+
+    if team_names:
+        title = f"Linear Issues — {args.team}"
+    elif args.mine:
+        title = "My Linear Issues"
+    else:
+        title = "Linear Issues — " + ", ".join(config["linear_teams"])
+
+    render_linear_issue_table(issues, title=title)
+
+
+def cmd_linear_show(args: argparse.Namespace) -> None:
+    """Show details for a specific Linear issue."""
+    from .linear_data import fetch_linear_issue_detail
+
+    identifier = args.identifier
+    console.print(f"[dim]Fetching {identifier}...[/dim]")
+    detail = fetch_linear_issue_detail(identifier)
+    if not detail:
+        console.print(f"[red]Issue {identifier} not found[/red]")
+        return
+
+    render_linear_issue_table([detail], title=f"Linear Issue — {identifier}")
+
+    # Show description
+    body = detail.get("body", "")
+    if body:
+        console.print("[bold]Description:[/bold]")
+        console.print(body[:500])
+        if len(body) > 500:
+            console.print("[dim]... (truncated)[/dim]")
+        console.print()
+
+    # Show comments
+    comments = detail.get("comments", [])
+    if comments:
+        console.print(f"[bold]Comments ({len(comments)}):[/bold]")
+        for c in comments:
+            console.print(f"  [blue]{c['author']}[/blue] ({c['created_ago']}): {c['body'][:120]}")
+        console.print()
+
+    # Show URL
+    url = detail.get("url", "")
+    if url:
+        console.print(f"[bold]URL:[/bold] {url}")
+
+
+def cmd_linear_teams(args: argparse.Namespace) -> None:
+    """List available Linear teams."""
+    from .linear_api import fetch_teams
+
+    console.print("[dim]Fetching teams...[/dim]")
+    teams = fetch_teams()
+    if not teams:
+        console.print("[red]No teams found (check lineartoken.txt)[/red]")
+        return
+    console.print("[bold]Available Linear teams:[/bold]")
+    for t in teams:
+        console.print(f"  [bold]{t['key']:8s}[/bold] {t['name']}")
+
+
 def cmd_repo(args: argparse.Namespace) -> None:
     """Add or remove a repo from the tracked list."""
     config = load_tracker_config()
@@ -381,6 +484,25 @@ def main(argv: list[str] | None = None) -> None:
     p_deploy.add_argument("--status", action="store_true", help="Show runner status instead of deploying")
     p_deploy.add_argument("--server", help="Runner server URL (default: from config or http://127.0.0.1:9189)")
     p_deploy.set_defaults(func=cmd_deploy)
+
+    # Linear
+    p_linear = sub.add_parser("linear", help="Linear issue tracking")
+    p_linear.set_defaults(func=cmd_linear)
+    linear_sub = p_linear.add_subparsers(dest="linear_cmd")
+
+    p_linear_list = linear_sub.add_parser("list", aliases=["ls"], help="List Linear issues")
+    p_linear_list.add_argument("--team", "-t", help="Filter to a specific team name or key")
+    p_linear_list.add_argument("--state", "-s", choices=["todo", "in-progress", "done", "backlog", "active", "all"],
+                               help="Filter by state")
+    p_linear_list.add_argument("--mine", "-m", action="store_true", help="Only show issues assigned to me")
+    p_linear_list.set_defaults(linear_action=cmd_linear_list)
+
+    p_linear_show = linear_sub.add_parser("show", help="Show Linear issue detail")
+    p_linear_show.add_argument("identifier", help="Issue identifier (e.g. CORE-123)")
+    p_linear_show.set_defaults(linear_action=cmd_linear_show)
+
+    p_linear_teams = linear_sub.add_parser("teams", help="List available Linear teams")
+    p_linear_teams.set_defaults(linear_action=cmd_linear_teams)
 
     # Rate limit
     p_rate = sub.add_parser("rate", help="Show GitHub API rate limit")
