@@ -110,6 +110,9 @@ def _apply_style(session: str) -> None:
     ]
     if sys.platform == "win32":
         style_cmds.append(["set", "-t", session, "mouse", "off"])
+        # Unbind Page Up from entering copy-mode so it passes through to
+        # the application running in the pane (e.g. Amp TUI).
+        style_cmds.append(["unbind-key", "-T", "root", "PPage"])
     for cmd_args in style_cmds:
         _run_tmux(cmd_args, check=False)
 
