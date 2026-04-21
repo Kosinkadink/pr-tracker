@@ -139,7 +139,7 @@ def probe_amp_status(session_name: str, window: str | int = "amp") -> str:
         return "offline"
 
     output = result.stdout
-    if "skills" not in output:
+    if "skill" not in output:
         return "offline"
 
     # When amp is actively working, the last line shows a spinner

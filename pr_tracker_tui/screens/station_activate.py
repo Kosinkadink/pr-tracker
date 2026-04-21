@@ -153,9 +153,9 @@ def _wait_for_amp(session_name: str, window: str | int = "amp", timeout: float =
             check=False,
         )
         # Look for amp's UI markers.  The "╭" char gets garbled by
-        # psmux capture-pane encoding, but "skills" (from the status
-        # bar) and "╰" survive reliably.
-        if result.returncode == 0 and "skills" in result.stdout:
+        # psmux capture-pane encoding, but "skill" (from the status
+        # bar, e.g. "1─skill─" or "5─skills─") and "╰" survive reliably.
+        if result.returncode == 0 and "skill" in result.stdout:
             return True
         time.sleep(0.5)
     return False
