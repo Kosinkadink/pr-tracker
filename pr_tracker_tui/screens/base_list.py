@@ -82,9 +82,80 @@ class BaseListScreen(Screen):
     def _open_detail(self, item: dict) -> None:
         """Push the detail screen for the selected item."""
 
+    def _pre_load(self) -> None:
+        """Optional hook called at the start of _load_items for subclass setup."""
+        pass
+
     @abstractmethod
+    def _load_cached_items(self) -> list[dict]:
+        """Return cached items or empty list."""
+
+    @abstractmethod
+    def _fetch_items_remote(self) -> list[dict]:
+        """Fetch items from the remote API (called from worker thread)."""
+
     def _load_items(self) -> None:
         """Load cached items then start background fetch."""
+        self._load_start = time.monotonic()
+        self._fetch_gen += 1
+        self._pre_load()
+        self._save_cursor()
+
+        table = self.query_one(f"#{self._table_id()}", DataTable)
+        table.clear()
+        table.display = True
+        self._item_data = []
+        self._filtered = []
+
+        cached = self._load_cached_items()
+        if cached:
+            self._item_data = cached
+            self._apply_filter()
+            self._restore_cursor()
+            kind = self._item_kind_label()
+            self._set_status(f"✓ {len(cached)} {kind} — from cache, refreshing…")
+        else:
+            self._set_status(f"⏳ Fetching {self._item_kind_label()}…")
+
+        self.query_one("#loading", LoadingIndicator).display = True
+        table.focus()
+        self.run_worker(self._bg_fetch, thread=True, group="fetch", exclusive=True)
+
+    def _bg_fetch(self) -> None:
+        from textual.worker import get_current_worker
+
+        worker = get_current_worker()
+        gen = self._fetch_gen
+
+        if worker.is_cancelled:
+            return
+
+        items = self._fetch_items_remote()
+
+        if worker.is_cancelled:
+            return
+
+        if gen == self._fetch_gen:
+            self.app.call_from_thread(self._on_fetch_complete, items, gen)
+
+    def _on_fetch_complete(self, items: list[dict], gen: int) -> None:
+        if gen != self._fetch_gen:
+            return
+        self._save_cursor()
+        self._item_data = items
+        self._apply_filter()
+        self._restore_cursor()
+
+        self.query_one("#loading", LoadingIndicator).display = False
+        elapsed = time.monotonic() - self._load_start
+        total = len(self._item_data)
+        shown = len(self._filtered)
+        search = self._search_text.lower()
+        filter_str = f" ({shown}/{total} shown)" if search else ""
+        self._set_status(
+            f"✓ {total} {self._item_kind_label()}{filter_str} — loaded in {elapsed:.1f}s"
+        )
+        self.query_one(f"#{self._table_id()}", DataTable).focus()
 
     @abstractmethod
     def _should_include_item(self, item: dict) -> bool:

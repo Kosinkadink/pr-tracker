@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import time
-
 from rich.text import Text
 from textual.binding import Binding
-from textual.widgets import DataTable, Input, LoadingIndicator
-from textual.worker import Worker, WorkerState
 
 from .base_list import BaseListScreen
 
@@ -126,75 +122,19 @@ class MentionListScreen(BaseListScreen):
         )
 
     # ------------------------------------------------------------------
-    # Data loading
+    # Data loading hooks
     # ------------------------------------------------------------------
 
-    def _load_items(self) -> None:
-        self._load_start = time.monotonic()
-        self._fetch_gen += 1
-        self._save_cursor()
-
-        table = self.query_one(f"#{self._table_id()}", DataTable)
-        table.clear()
-        table.display = True
-        self._item_data = []
-        self._filtered = []
-
+    def _load_cached_items(self) -> list[dict]:
         from pr_tracker.slack_data import load_mention_cache
-
-        cache_key = "mentions_actions" if self._actions_only else "mentions"
-        cached = load_mention_cache(cache_key)
-        if cached:
-            self._item_data = cached
-            self._apply_filter()
-            self._restore_cursor()
-            self._set_status(
-                f"✓ {len(cached)} mentions — from cache, refreshing…"
-            )
-        else:
-            self._set_status("⏳ Fetching Slack mentions…")
-
-        self.query_one("#loading", LoadingIndicator).display = True
-        table.focus()
-        self.run_worker(self._bg_fetch, thread=True, group="fetch", exclusive=True)
-
-    def _bg_fetch(self) -> None:
-        from textual.worker import get_current_worker
-        from pr_tracker.slack_data import fetch_mentions
-
-        worker = get_current_worker()
-        gen = self._fetch_gen
-
-        if worker.is_cancelled:
-            return
-
         hours = _HOURS_OPTIONS[self._hours_idx]
-        items = fetch_mentions(since_hours=hours, actions_only=self._actions_only)
+        cache_key = f"mentions_actions_{hours}h" if self._actions_only else f"mentions_{hours}h"
+        return load_mention_cache(cache_key)
 
-        if worker.is_cancelled:
-            return
-
-        if gen == self._fetch_gen:
-            self.app.call_from_thread(self._on_fetch_complete, items, gen)
-
-    def _on_fetch_complete(self, items: list[dict], gen: int) -> None:
-        if gen != self._fetch_gen:
-            return
-        self._save_cursor()
-        self._item_data = items
-        self._apply_filter()
-        self._restore_cursor()
-
-        self.query_one("#loading", LoadingIndicator).display = False
-        elapsed = time.monotonic() - self._load_start
-        total = len(self._item_data)
-        shown = len(self._filtered)
-        search = self._search_text.lower()
-        filter_str = f" ({shown}/{total} shown)" if search else ""
-        self._set_status(
-            f"✓ {total} mentions{filter_str} — loaded in {elapsed:.1f}s"
-        )
-        self.query_one(f"#{self._table_id()}", DataTable).focus()
+    def _fetch_items_remote(self) -> list[dict]:
+        from pr_tracker.slack_data import fetch_mentions
+        hours = _HOURS_OPTIONS[self._hours_idx]
+        return fetch_mentions(since_hours=hours, actions_only=self._actions_only)
 
     # ------------------------------------------------------------------
     # Actions
@@ -205,7 +145,7 @@ class MentionListScreen(BaseListScreen):
         label = "with GH links only" if self._actions_only else "all mentions"
         self.notify(f"Showing: {label}")
         self._update_filter_bar()
-        self._load_items()
+        self._apply_filter()
 
     def action_cycle_time(self) -> None:
         self._hours_idx = (self._hours_idx + 1) % len(_HOURS_OPTIONS)

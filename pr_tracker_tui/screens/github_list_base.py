@@ -56,6 +56,14 @@ class GitHubListScreen(BaseListScreen):
     def _save_cache(self, items: list[dict]) -> None:
         """Persist fetched items to cache."""
 
+    def _load_cached_items(self) -> list[dict]:
+        # GitHubListScreen overrides _load_items entirely; this is not called.
+        return []
+
+    def _fetch_items_remote(self) -> list[dict]:
+        # GitHubListScreen overrides _load_items entirely; this is not called.
+        return []
+
     def _item_row_key(self, item: dict) -> str:
         """Return a unique row key for a DataTable row. Override for non-numbered items."""
         return f"{item.get('repo', '')}#{item.get('number', item.get('name', '?'))}"
