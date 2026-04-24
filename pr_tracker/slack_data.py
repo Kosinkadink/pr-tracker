@@ -161,10 +161,18 @@ def _fetch_merged_thread_keys(user_id: str, since_hours: int) -> set[str]:
         f"from:me merged",
         count=50,
     )
+    cutoff_ts = time.time() - (since_hours * 3600) if since_hours else 0
     keys: set[str] = set()
     for m in matches:
         text = m.get("text", "").lower()
         if "merged" not in text:
+            continue
+        # Respect since_hours — skip old messages
+        try:
+            ts = float(m.get("ts", "0"))
+        except (ValueError, TypeError):
+            ts = 0
+        if cutoff_ts and ts < cutoff_ts:
             continue
         pl = m.get("permalink", "")
         key = _extract_thread_key(pl)
@@ -271,9 +279,9 @@ def fetch_mentions(
         enriched = [m for m in enriched if m["has_action"]]
 
     # Cache
-    cache_key = "mentions"
+    cache_key = f"mentions_{since_hours}h"
     if actions_only:
-        cache_key = "mentions_actions"
+        cache_key = f"mentions_actions_{since_hours}h"
     save_mention_cache(cache_key, enriched)
 
     return enriched

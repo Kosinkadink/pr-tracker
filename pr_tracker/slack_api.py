@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
 from typing import Any
 
 import requests as req
 
-from safe_file import atomic_write
+from .api_cache import TTLCache
 from .config import load_slack_token
 
 API = "https://slack.com/api"
 
-# TTL cache
-_CACHE_DIR = Path(__file__).resolve().parent / ".cache" / "slack"
-_CACHE_TTL = 120  # seconds
+_cache = TTLCache(Path(__file__).resolve().parent / ".cache" / "slack", ttl=120)
 
 
 def _headers() -> dict[str, str]:
@@ -25,36 +21,6 @@ def _headers() -> dict[str, str]:
     if token:
         h["Authorization"] = f"Bearer {token}"
     return h
-
-
-def _cache_path(key: str) -> Path:
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    safe = key.replace("/", "_").replace(":", "_").replace(" ", "_").replace("<", "").replace(">", "")
-    return _CACHE_DIR / f"{safe}.json"
-
-
-def _cache_get(key: str) -> Any | None:
-    path = _cache_path(key)
-    if not path.exists():
-        return None
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if time.time() - raw.get("_ts", 0) < _CACHE_TTL:
-            return raw.get("data")
-    except (json.JSONDecodeError, OSError):
-        pass
-    return None
-
-
-def _cache_set(key: str, data: Any) -> None:
-    path = _cache_path(key)
-    try:
-        atomic_write(
-            path,
-            json.dumps({"_ts": time.time(), "data": data}, indent=2) + "\n",
-        )
-    except OSError:
-        pass
 
 
 def _api_get(method: str, params: dict | None = None, cache_key: str = "") -> dict:
@@ -68,7 +34,7 @@ def _api_get(method: str, params: dict | None = None, cache_key: str = "") -> di
         return {}
 
     if cache_key:
-        cached = _cache_get(cache_key)
+        cached = _cache.get(cache_key)
         if cached is not None:
             return cached
 
@@ -86,7 +52,7 @@ def _api_get(method: str, params: dict | None = None, cache_key: str = "") -> di
         raise RuntimeError(f"Slack API error: {data.get('error', 'unknown')}")
 
     if cache_key:
-        _cache_set(cache_key, data)
+        _cache.set(cache_key, data)
     return data
 
 

@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import time
-
 from rich.text import Text
 from textual.binding import Binding
-from textual.widgets import DataTable, Input, LoadingIndicator
-from textual.worker import Worker, WorkerState
 
 from .base_list import BaseListScreen
 
@@ -189,74 +185,18 @@ class LinearIssueListScreen(BaseListScreen):
     # but the TUI always fetches without state filters (getting all active),
     # then filters client-side via _apply_filter. So "all" / "mine_{id}" is correct.
 
-    def _load_items(self) -> None:
-        self._load_start = time.monotonic()
-        self._fetch_gen += 1
+    def _pre_load(self) -> None:
         self._load_station_identifiers()
-        self._save_cursor()
 
-        table = self.query_one(f"#{self._table_id()}", DataTable)
-        table.clear()
-        table.display = True
-        self._item_data = []
-        self._filtered = []
-
+    def _load_cached_items(self) -> list[dict]:
         from pr_tracker.linear_data import load_linear_issue_cache
+        return load_linear_issue_cache(self._cache_key())
 
-        cached = load_linear_issue_cache(self._cache_key())
-        if cached:
-            self._item_data = cached
-            self._apply_filter()
-            self._restore_cursor()
-            self._set_status(
-                f"✓ {len(cached)} issues — from cache, refreshing…"
-            )
-        else:
-            self._set_status("⏳ Fetching Linear issues…")
-
-        self.query_one("#loading", LoadingIndicator).display = True
-        table.focus()
-        self.run_worker(self._bg_fetch, thread=True, group="fetch", exclusive=True)
-
-    def _bg_fetch(self) -> None:
-        from textual.worker import get_current_worker
+    def _fetch_items_remote(self) -> list[dict]:
         from pr_tracker.linear_data import fetch_linear_issues, fetch_my_linear_issues
-
-        worker = get_current_worker()
-        gen = self._fetch_gen
-
-        if worker.is_cancelled:
-            return
-
         if self._mine_only:
-            items = fetch_my_linear_issues()
-        else:
-            items = fetch_linear_issues()
-
-        if worker.is_cancelled:
-            return
-
-        if gen == self._fetch_gen:
-            self.app.call_from_thread(self._on_fetch_complete, items, gen)
-
-    def _on_fetch_complete(self, items: list[dict], gen: int) -> None:
-        if gen != self._fetch_gen:
-            return
-        self._save_cursor()
-        self._item_data = items
-        self._apply_filter()
-        self._restore_cursor()
-
-        self.query_one("#loading", LoadingIndicator).display = False
-        elapsed = time.monotonic() - self._load_start
-        total = len(self._item_data)
-        shown = len(self._filtered)
-        search = self._search_text.lower()
-        filter_str = f" ({shown}/{total} shown)" if search else ""
-        self._set_status(
-            f"✓ {total} issues{filter_str} — loaded in {elapsed:.1f}s"
-        )
-        self.query_one(f"#{self._table_id()}", DataTable).focus()
+            return fetch_my_linear_issues()
+        return fetch_linear_issues()
 
     # ------------------------------------------------------------------
     # Actions

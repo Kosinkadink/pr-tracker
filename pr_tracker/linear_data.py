@@ -204,30 +204,3 @@ def extract_linear_identifier(branch_name: str) -> str | None:
         return f"{m.group(1)}-{m.group(2)}"
     return None
 
-
-def link_pr_to_linear(pr: dict) -> dict:
-    """Scan a PR's branch name for a Linear identifier and attach it.
-
-    If found, adds ``linear_id`` and ``linear_issue`` (enriched) to the PR dict.
-    Skips the API call entirely if no Linear token is configured.
-    Returns the PR dict (mutated in place).
-    """
-    from .config import load_linear_token
-
-    branch = pr.get("head_ref", "")
-    identifier = extract_linear_identifier(branch)
-    if not identifier:
-        return pr
-
-    pr["linear_id"] = identifier
-
-    if not load_linear_token():
-        return pr
-
-    try:
-        issue = linear_api.fetch_issue_by_identifier(identifier)
-        if issue:
-            pr["linear_issue"] = enrich_linear_issue(issue)
-    except Exception:
-        pass
-    return pr

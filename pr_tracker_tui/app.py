@@ -38,6 +38,7 @@ class StationCreationJob:
     error: str | None = None
     station_id: int | None = None
     station_path: str | None = None
+    linear_identifier: str = ""
     skipped_repos: list[str] = field(default_factory=list)
     cancel_event: threading.Event = field(default_factory=threading.Event)
     cancelling: bool = False
@@ -339,7 +340,7 @@ class PRTrackerApp(App):
         for job in self.creation_jobs:
             if not job.done:
                 if linear_identifier:
-                    match = getattr(job, "linear_identifier", "") == linear_identifier
+                    match = job.linear_identifier == linear_identifier
                 elif job.repo == repo and number:
                     match = (
                         (is_pr and job.pr_number == number)
@@ -435,9 +436,9 @@ class PRTrackerApp(App):
             label = title
 
         job = StationCreationJob(
-            label=label, repo=repo, pr_number=pr_number, issue_number=issue_number, ref=ref
+            label=label, repo=repo, pr_number=pr_number, issue_number=issue_number, ref=ref,
+            linear_identifier=linear_identifier,
         )
-        job.linear_identifier = linear_identifier
         self._creation_jobs.append(job)
         self.notify(f"🏗️ Creating station for {label}…")
 
