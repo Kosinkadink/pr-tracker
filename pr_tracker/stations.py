@@ -494,6 +494,13 @@ def create_station(
     else:
         progress("⏭ No PR branch to checkout")
 
+    # Mirror amp skills from nested repos (e.g. comfy-runner) to the station
+    # root so amp discovers them when launched at <station_path>. Done after
+    # the PR checkout so a PR that modifies skills is reflected in the sync.
+    synced_skills = _sync_nested_amp_skills(station_path)
+    if synced_skills:
+        log_msg(f"✓ Synced amp skills: {', '.join(sorted(set(synced_skills)))}")
+
     # 4. Register in stations.json
     _check_cancel()
     progress("✓ Registering station…")
@@ -606,6 +613,11 @@ def reuse_station(
             raise RuntimeError(f"Nested repo directory not found: {sub_dir}")
     else:
         progress("No PR branch to checkout")
+
+    # Re-sync amp skills from nested repos so the reused station picks up
+    # any updates from the new branch (and overwrites any stale skills from
+    # the previous task).
+    _sync_nested_amp_skills(station_path)
 
     # 3. Update metadata
     progress("Updating station metadata")
@@ -725,6 +737,53 @@ def check_uncommitted_changes(station_id: int) -> list[str]:
     return dirty
 
 
+def _sync_nested_amp_skills(station_path: Path) -> list[str]:
+    """Mirror amp skills from each nested repo's ``.agents/skills/`` to ``<station>/.agents/skills/``.
+
+    Amp only discovers skills at the workspace root's ``.agents/skills/``
+    directory, but skills are typically published inside individual nested
+    repos (e.g. ``comfy-runner/.agents/skills/comfy-runner/``). Copy every
+    such skill into the station root so amp picks them up when launched at
+    the station path.
+
+    Iterates over ``NESTED_REPOS`` in declaration order; if two repos
+    publish a skill with the same name the later one wins.
+
+    Existing destination skill directories are replaced. Best-effort —
+    failures are silently ignored. Returns the list of skill names synced.
+    """
+    import shutil
+
+    dst_root = station_path / ".agents" / "skills"
+    synced: list[str] = []
+    dst_root_created = False
+
+    for dir_name, _ in NESTED_REPOS:
+        src_root = station_path / dir_name / ".agents" / "skills"
+        if not src_root.is_dir():
+            continue
+
+        if not dst_root_created:
+            try:
+                dst_root.mkdir(parents=True, exist_ok=True)
+                dst_root_created = True
+            except OSError:
+                return synced
+
+        for src_skill in src_root.iterdir():
+            if not src_skill.is_dir():
+                continue
+            dst_skill = dst_root / src_skill.name
+            if dst_skill.exists():
+                shutil.rmtree(dst_skill, ignore_errors=True)
+            try:
+                shutil.copytree(src_skill, dst_skill)
+                synced.append(src_skill.name)
+            except OSError:
+                pass  # best-effort
+    return synced
+
+
 def _clone_missing_repos(
     station_path: Path,
     *,
@@ -802,6 +861,10 @@ def pull_all_branches(
             _run_git(["pull", "--ff-only"], cwd=nested)
         except (subprocess.CalledProcessError, OSError):
             failed.append(dir_name)
+
+    # Re-sync amp skills from nested repos now that we have their latest content.
+    _sync_nested_amp_skills(station_path)
+
     return failed
 
 
