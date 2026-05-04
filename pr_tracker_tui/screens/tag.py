@@ -21,7 +21,8 @@ class TagScreen(StyledModalScreen[list[str] | None]):
         super().__init__()
         self._pr = pr
         self._repo = pr.get("repo", "")
-        self._number = pr["number"]
+        # PRs/issues use "number"; branches don't have one and are identified by "name".
+        self._number = pr.get("number") or pr.get("name")
 
     def compose(self) -> ComposeResult:
         tags = self._pr.get("tags", [])

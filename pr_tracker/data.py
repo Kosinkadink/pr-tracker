@@ -538,13 +538,19 @@ def enrich_branch(branch: dict, repo: str) -> dict[str, Any]:
     commit = branch.get("commit", {})
     # The branches endpoint gives a minimal commit object; extract what we can
     sha = commit.get("sha", "")
+    name = branch.get("name", "?")
+
+    # Tags are stored under "{repo}#{identifier}"; for branches we use the name.
+    all_tags = load_tags()
+    tags = all_tags.get(f"{repo}#{name}", [])
 
     return {
-        "name": branch.get("name", "?"),
+        "name": name,
         "repo": repo,
         "sha": sha[:12] if sha else "?",
         "protected": branch.get("protected", False),
-        "url": f"https://github.com/{repo}/tree/{branch.get('name', '')}",
+        "url": f"https://github.com/{repo}/tree/{name}",
+        "tags": tags,
     }
 
 
