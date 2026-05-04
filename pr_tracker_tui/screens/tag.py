@@ -1,4 +1,4 @@
-"""Tag management screen — add/remove tags on a PR."""
+"""Tag management screen — add/remove tags on a PR/issue/branch."""
 
 from __future__ import annotations
 
@@ -10,26 +10,27 @@ from textual.widgets import Footer, Input, Static
 
 
 class TagScreen(StyledModalScreen[list[str] | None]):
-    """Modal for adding/removing tags on a PR."""
+    """Modal for adding/removing tags on a PR, issue, or branch."""
 
     BINDINGS = [
         Binding("q", "close", "Back"),
         Binding("escape", "close", "Back"),
     ]
 
-    def __init__(self, pr: dict) -> None:
+    def __init__(self, item: dict) -> None:
         super().__init__()
-        self._pr = pr
-        self._repo = pr.get("repo", "")
-        # PRs/issues use "number"; branches don't have one and are identified by "name".
-        self._number = pr.get("number") or pr.get("name")
+        self._item = item
+        self._repo = item.get("repo", "")
+        # PRs/issues use "number" (int); branches don't have one and are
+        # identified by "name" (str). Both work as the tag-store identifier.
+        self._identifier: int | str = item.get("number") or item.get("name")
 
     def compose(self) -> ComposeResult:
-        tags = self._pr.get("tags", [])
+        tags = self._item.get("tags", [])
         tag_str = ", ".join(tags) if tags else "[dim]none[/dim]"
         with Vertical(id="tag-dialog"):
             yield Static(
-                f"[bold]Tags for #{self._number}[/bold]\n\n"
+                f"[bold]Tags for #{self._identifier}[/bold]\n\n"
                 f"Current: {tag_str}\n\n"
                 f"Type a tag name and press Enter to add.\n"
                 f"Prefix with [bold]-[/bold] to remove (e.g. [bold]-review[/bold]).",
@@ -53,19 +54,19 @@ class TagScreen(StyledModalScreen[list[str] | None]):
         if value.startswith("-"):
             tag = value[1:].strip()
             if tag:
-                remove_tag(self._repo, self._number, tag)
+                remove_tag(self._repo, self._identifier, tag)
                 self.notify(f"Removed tag: {tag}")
         else:
-            add_tag(self._repo, self._number, value)
+            add_tag(self._repo, self._identifier, value)
             self.notify(f"Added tag: {value}")
 
         event.input.value = ""
         # Update display
-        tags = get_tags(self._repo, self._number)
-        self._pr["tags"] = tags
+        tags = get_tags(self._repo, self._identifier)
+        self._item["tags"] = tags
         tag_str = ", ".join(tags) if tags else "[dim]none[/dim]"
         self.query_one("#tag-text", Static).update(
-            f"[bold]Tags for #{self._number}[/bold]\n\n"
+            f"[bold]Tags for #{self._identifier}[/bold]\n\n"
             f"Current: {tag_str}\n\n"
             f"Type a tag name and press Enter to add.\n"
             f"Prefix with [bold]-[/bold] to remove (e.g. [bold]-review[/bold])."
@@ -73,4 +74,4 @@ class TagScreen(StyledModalScreen[list[str] | None]):
 
     def action_close(self) -> None:
         from pr_tracker.data import get_tags
-        self.dismiss(get_tags(self._repo, self._number))
+        self.dismiss(get_tags(self._repo, self._identifier))
