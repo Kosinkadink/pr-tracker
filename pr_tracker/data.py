@@ -533,18 +533,34 @@ def enrich_issue(issue: dict, repo: str) -> dict[str, Any]:
     }
 
 
-def enrich_branch(branch: dict, repo: str) -> dict[str, Any]:
-    """Add computed fields to a raw GitHub branch dict."""
+def enrich_branch(
+    branch: dict,
+    repo: str,
+    *,
+    all_tags: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Add computed fields to a raw GitHub branch dict.
+
+    Pass ``all_tags`` (the result of :func:`load_tags`) when enriching many
+    branches in a loop to avoid repeatedly re-reading ``pr-tags.json``.
+    """
     commit = branch.get("commit", {})
     # The branches endpoint gives a minimal commit object; extract what we can
     sha = commit.get("sha", "")
+    name = branch.get("name", "?")
+
+    # Tags are stored under "{repo}#{identifier}"; for branches we use the name.
+    if all_tags is None:
+        all_tags = load_tags()
+    tags = all_tags.get(f"{repo}#{name}", [])
 
     return {
-        "name": branch.get("name", "?"),
+        "name": name,
         "repo": repo,
         "sha": sha[:12] if sha else "?",
         "protected": branch.get("protected", False),
-        "url": f"https://github.com/{repo}/tree/{branch.get('name', '')}",
+        "url": f"https://github.com/{repo}/tree/{name}",
+        "tags": tags,
     }
 
 
@@ -798,11 +814,12 @@ def fetch_rate_limit() -> dict[str, Any]:
 # Tag management
 # ---------------------------------------------------------------------------
 
-def add_tag(repo: str, number: int, tag: str) -> list[str]:
-    """Add a tag to a PR/issue. Returns the updated tag list."""
+def add_tag(repo: str, identifier: int | str, tag: str) -> list[str]:
+    """Add a tag to a PR/issue/branch. ``identifier`` is the PR/issue number
+    (int) or a branch name (str). Returns the updated tag list."""
     from .config import save_tags
 
-    key = f"{repo}#{number}"
+    key = f"{repo}#{identifier}"
     all_tags = load_tags()
     tags = all_tags.get(key, [])
     if tag not in tags:
@@ -812,11 +829,12 @@ def add_tag(repo: str, number: int, tag: str) -> list[str]:
     return tags
 
 
-def remove_tag(repo: str, number: int, tag: str) -> list[str]:
-    """Remove a tag from a PR/issue. Returns the updated tag list."""
+def remove_tag(repo: str, identifier: int | str, tag: str) -> list[str]:
+    """Remove a tag from a PR/issue/branch. ``identifier`` is the PR/issue
+    number (int) or a branch name (str). Returns the updated tag list."""
     from .config import save_tags
 
-    key = f"{repo}#{number}"
+    key = f"{repo}#{identifier}"
     all_tags = load_tags()
     tags = all_tags.get(key, [])
     if tag in tags:
@@ -829,9 +847,10 @@ def remove_tag(repo: str, number: int, tag: str) -> list[str]:
     return tags
 
 
-def get_tags(repo: str, number: int) -> list[str]:
-    """Get tags for a PR/issue."""
-    key = f"{repo}#{number}"
+def get_tags(repo: str, identifier: int | str) -> list[str]:
+    """Get tags for a PR/issue/branch. ``identifier`` is the PR/issue number
+    (int) or a branch name (str)."""
+    key = f"{repo}#{identifier}"
     return load_tags().get(key, [])
 
 

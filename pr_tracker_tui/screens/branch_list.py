@@ -103,10 +103,12 @@ class BranchListScreen(GitHubListScreen):
         pass  # No enrichment needed for branches
 
     def _fetch_items_worker(self, worker, gen: int) -> list[dict]:
-        from pr_tracker.data import enrich_branch
+        from pr_tracker.data import enrich_branch, load_tags
         from pr_tracker import github_api
 
         repos = [self._repo] if self._repo else []
+        # Load tags once so enrich_branch doesn't re-read pr-tags.json per branch.
+        all_tags = load_tags()
 
         all_enriched: list[dict] = []
         first_batch = True
@@ -118,7 +120,7 @@ class BranchListScreen(GitHubListScreen):
             except Exception:
                 continue
 
-            enriched = [enrich_branch(b, repo) for b in raw_branches]
+            enriched = [enrich_branch(b, repo, all_tags=all_tags) for b in raw_branches]
             all_enriched.extend(enriched)
 
             try:
