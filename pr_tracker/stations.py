@@ -628,6 +628,10 @@ def reuse_station(
             s["ref"] = ref or (f"pr-{pr_number}" if pr_number else None)
             s["pr_number"] = pr_number
             s["issue_number"] = issue_number
+            # Clear stale linear_identifier from the previous task so an old
+            # Linear issue doesn't keep matching this station via _matches_station
+            # (the caller sets the new identifier via update_station afterward).
+            s["linear_identifier"] = None
             s["last_used"] = _now_iso()
             s["status"] = "active"
             s["tmux_session"] = f"station{station_id}"
@@ -700,7 +704,8 @@ def cleanup_station(station_id: int) -> None:
                 pass
 
     update_station(station_id, repo=None, ref=None, pr_number=None,
-                   issue_number=None, title=None, body=None,
+                   issue_number=None, linear_identifier=None,
+                   title=None, body=None,
                    status="idle", tmux_session=None, prompt_sent=None)
 
 
