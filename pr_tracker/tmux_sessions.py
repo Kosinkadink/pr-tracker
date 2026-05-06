@@ -82,10 +82,17 @@ def _run_tmux(
     """
     binary = ensure_tmux()
     cmd = [binary] + args
+    # Force UTF-8 decoding — capture-pane returns Unicode box-drawing
+    # characters from the amp TUI, and on Windows the default codec
+    # (cp1252) raises UnicodeDecodeError on those bytes, leaving stdout
+    # as None.  errors="replace" guards against any stray bytes that
+    # aren't valid UTF-8 either.
     return subprocess.run(
         cmd,
         capture_output=capture,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=check,
         env=_tmux_env(),
     )
