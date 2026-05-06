@@ -24,12 +24,27 @@ TUI_CMD="$PYTHON -m pr_tracker_tui"
 
 # Check if tmux is available
 if command -v tmux &>/dev/null; then
-    if tmux has-session -t pr-tracker 2>/dev/null; then
-        # Session exists — reattach
+    if [ -n "${TMUX:-}" ]; then
+        # Already inside tmux - create a new window in the current session
+        exec tmux new-window -n pr-tracker "$TUI_CMD"
+    elif tmux has-session -t pr-tracker 2>/dev/null; then
+        # Session exists - reattach
         exec tmux attach-session -t pr-tracker
     else
-        # Create new session with TUI
-        exec tmux new-session -s pr-tracker -n tui "$TUI_CMD"
+        # Create detached session, start TUI via send-keys, apply styling, then attach
+        tmux new-session -d -s pr-tracker -n tui
+        tmux send-keys -t pr-tracker:tui "$TUI_CMD; exit" Enter
+
+        # Apply neutral dark styling (matches Windows/ps1 script)
+        tmux set -t pr-tracker status-style "bg=#333333,fg=#cccccc" 2>/dev/null
+        tmux set -t pr-tracker window-status-style "bg=#333333,fg=#888888" 2>/dev/null
+        tmux set -t pr-tracker window-status-current-style "bg=#555555,fg=#ffffff,bold" 2>/dev/null
+        tmux set -t pr-tracker status-left "[#S] " 2>/dev/null
+        tmux set -t pr-tracker status-left-style "fg=#88aaff,bold" 2>/dev/null
+        tmux set -t pr-tracker status-right "%H:%M" 2>/dev/null
+        tmux set -t pr-tracker status-right-style "fg=#888888" 2>/dev/null
+
+        exec tmux attach-session -t pr-tracker
     fi
 else
     # No tmux available — run TUI directly (legacy fallback)

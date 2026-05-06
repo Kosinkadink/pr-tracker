@@ -385,7 +385,7 @@ def _launch_terminal_with_tmux(session_name: str) -> None:
         subprocess.Popen(cmd, env=env)
 
     elif sys.platform == "darwin":
-        attach_cmd = f'"{binary}" attach-session -t {session_name}'
+        attach_cmd = f"'{binary}' attach-session -t {session_name}"
         script = f'tell application "Terminal" to do script "{attach_cmd}"'
         subprocess.Popen(["osascript", "-e", script])
 
