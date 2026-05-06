@@ -8,10 +8,10 @@ stuck agents.
 State timestamps are persisted to disk so timers survive TUI restarts.
 
 Detection markers:
-  - ``skills`` in capture-pane output → amp is running
+  - ``╰`` (input-box bottom-left corner) in capture-pane output → amp is running
   - ``Esc to cancel`` in last lines → **working**
-  - ``skills`` present but no ``Esc to cancel`` → **idle**
-  - capture-pane fails or no ``skills`` → **offline**
+  - ``╰`` present but no ``Esc to cancel`` → **idle**
+  - capture-pane fails or no ``╰`` → **offline**
 """
 
 from __future__ import annotations
@@ -139,7 +139,11 @@ def probe_amp_status(session_name: str, window: str | int = "amp") -> str:
         return "offline"
 
     output = result.stdout
-    if "skill" not in output:
+    # Amp's input box bottom-left corner — present whenever the amp UI
+    # is up (welcome screen and during sessions), and survives psmux
+    # capture-pane encoding on Windows.  The previous "skill" / "skills"
+    # status-bar marker was removed in a recent amp update.
+    if "╰" not in output:
         return "offline"
 
     # When amp is actively working, the last line shows a spinner

@@ -139,8 +139,9 @@ def _station_title(station: dict) -> str:
 def _wait_for_amp(session_name: str, window: str | int = "amp", timeout: float = 15) -> bool:
     """Wait until amp's UI is ready in the tmux window.
 
-    Polls ``capture-pane`` looking for amp's input box border character
-    (``╭`` or ``╰``).  Returns True if amp appeared, False on timeout.
+    Polls ``capture-pane`` looking for amp's input box bottom-left
+    corner character (``╰``).  Returns True if amp appeared, False
+    on timeout.
     """
     import time
     from pr_tracker.tmux_sessions import _run_tmux
@@ -152,10 +153,11 @@ def _wait_for_amp(session_name: str, window: str | int = "amp", timeout: float =
             ["capture-pane", "-t", target, "-p"],
             check=False,
         )
-        # Look for amp's UI markers.  The "╭" char gets garbled by
-        # psmux capture-pane encoding, but "skill" (from the status
-        # bar, e.g. "1─skill─" or "5─skills─") and "╰" survive reliably.
-        if result.returncode == 0 and "skill" in result.stdout:
+        # The "╭" char gets garbled by psmux capture-pane encoding on
+        # Windows, but "╰" survives reliably and is present in both the
+        # welcome screen and active sessions.  The old "skill" / "skills"
+        # status-bar marker was removed in a recent amp update.
+        if result.returncode == 0 and "╰" in result.stdout:
             return True
         time.sleep(0.5)
     return False
