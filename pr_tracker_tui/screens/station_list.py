@@ -426,14 +426,19 @@ class StationListScreen(Screen):
         )
 
     def action_open_path(self) -> None:
-        import subprocess
+        import subprocess, sys
         station = self._selected_station()
         if not station:
             self.notify("No station selected")
             return
         path = station.get("path", "")
         if path:
-            subprocess.Popen(["explorer", path])
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            elif sys.platform == "win32":
+                subprocess.Popen(["explorer", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
             self.notify(f"Opened {path}")
 
     def action_back(self) -> None:

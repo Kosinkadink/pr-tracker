@@ -241,14 +241,19 @@ class StationDetailScreen(Screen):
             self.notify(f"Switch failed: {e}", severity="warning")
 
     def action_open_path(self) -> None:
-        import subprocess
+        import subprocess, sys
         path = ""
         if self._station:
             path = self._station.get("path", "")
         elif self._job and self._job.station_path:
             path = self._job.station_path
         if path:
-            subprocess.Popen(["explorer", path])
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            elif sys.platform == "win32":
+                subprocess.Popen(["explorer", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
             self.notify(f"Opened {path}")
         else:
             self.notify("No station path available yet")
