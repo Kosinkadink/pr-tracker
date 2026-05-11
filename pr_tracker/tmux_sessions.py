@@ -180,9 +180,10 @@ def create_session(
         return
 
     if windows is None:
+        from .config import get_amp_command_string
         windows = [
             {"name": "shell", "cmd": None},
-            {"name": "amp", "cmd": "amp"},
+            {"name": "amp", "cmd": get_amp_command_string()},
         ]
 
     # Create session with the first window (detached).

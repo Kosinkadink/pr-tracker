@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from safe_file import atomic_read, atomic_write  # noqa: F401 — re-exported
+
+# Env var set by the TUI launcher when ``--take-me-back`` is passed on
+# startup.  When set to ``"1"``, every freshly launched amp session is
+# spawned with the ``--take-me-back`` flag.
+AMP_TAKE_ME_BACK_ENV = "PR_TRACKER_AMP_TAKE_ME_BACK"
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -85,6 +91,36 @@ def load_tracker_config() -> dict:
 def save_tracker_config(config: dict) -> None:
     """Persist pr-tracker.json."""
     atomic_write(TRACKER_CONFIG_FILE, json.dumps(config, indent=2) + "\n", backup=True)
+
+
+def amp_take_me_back_enabled() -> bool:
+    """Return True if ``--take-me-back`` should be passed when launching amp."""
+    return os.environ.get(AMP_TAKE_ME_BACK_ENV) == "1"
+
+
+def set_amp_take_me_back(enabled: bool) -> None:
+    """Enable/disable the ``--take-me-back`` flag for newly launched amp sessions.
+
+    Sets/unsets the :data:`AMP_TAKE_ME_BACK_ENV` env var so that all
+    subprocesses (including tmux/wt children) inherit the setting.
+    """
+    if enabled:
+        os.environ[AMP_TAKE_ME_BACK_ENV] = "1"
+    else:
+        os.environ.pop(AMP_TAKE_ME_BACK_ENV, None)
+
+
+def get_amp_argv() -> list[str]:
+    """Return the argv used to launch amp (e.g. ``["amp", "--take-me-back"]``)."""
+    argv = ["amp"]
+    if amp_take_me_back_enabled():
+        argv.append("--take-me-back")
+    return argv
+
+
+def get_amp_command_string() -> str:
+    """Return the amp launch command as a single shell-ready string."""
+    return " ".join(get_amp_argv())
 
 
 def get_terminal_backend() -> str:

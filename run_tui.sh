@@ -20,7 +20,16 @@ if [ ! -d "$SCRIPT_DIR/.venv" ]; then
 fi
 
 PYTHON="$SCRIPT_DIR/.venv/bin/python"
-TUI_CMD="$PYTHON -m pr_tracker_tui"
+
+# Forward known startup args (e.g. --take-me-back) to the TUI command.
+TUI_ARGS=""
+for arg in "$@"; do
+    if [ "$arg" = "--take-me-back" ]; then
+        TUI_ARGS=" --take-me-back"
+    fi
+done
+
+TUI_CMD="$PYTHON -m pr_tracker_tui$TUI_ARGS"
 
 # Check if tmux is available
 if command -v tmux &>/dev/null; then

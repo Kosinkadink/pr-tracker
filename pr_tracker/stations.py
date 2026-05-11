@@ -955,6 +955,8 @@ def _find_pwsh() -> str | None:
 
 def _win32_terminal_templates() -> dict:
     """Build Windows Terminal templates, preferring PowerShell 7 when available."""
+    from .config import get_amp_command_string
+    amp_cmd_str = get_amp_command_string()
     pwsh = _find_pwsh()
     if pwsh:
         shell_cmd = ["wt", "-w", "{window}", "nt", "-d", "{path}",
@@ -962,29 +964,43 @@ def _win32_terminal_templates() -> dict:
                      pwsh, "-NoLogo"]
         amp_cmd = ["wt", "-w", "{window}", "nt", "-d", "{path}",
                    "--title", "{title}", "--suppressApplicationTitle",
-                   pwsh, "-NoLogo", "-Command", "amp"]
+                   pwsh, "-NoLogo", "-Command", amp_cmd_str]
     else:
         shell_cmd = ["wt", "-w", "{window}", "nt", "-d", "{path}",
                      "--title", "{title}", "--suppressApplicationTitle"]
         amp_cmd = ["wt", "-w", "{window}", "nt", "-d", "{path}",
                    "--title", "{title}", "--suppressApplicationTitle",
-                   "cmd", "/c", "amp"]
+                   "cmd", "/c", amp_cmd_str]
     return {"shell": shell_cmd, "amp": amp_cmd, "combine": ";", "combine_skip": 3}
 
 
-_TERMINAL_TEMPLATES: dict[str, dict] = {
-    "win32": _win32_terminal_templates(),
-    "darwin": {
+def _darwin_terminal_templates() -> dict:
+    from .config import get_amp_command_string
+    amp_cmd_str = get_amp_command_string()
+    return {
         "shell": ["open", "-a", "Terminal", "{path}"],
         "amp": ["osascript", "-e",
-                "tell application \"Terminal\" to do script \"cd '{path}' && amp\""],
-    },
-    "linux": {
+                f"tell application \"Terminal\" to do script \"cd '{{path}}' && {amp_cmd_str}\""],
+    }
+
+
+def _linux_terminal_templates() -> dict:
+    from .config import get_amp_argv
+    return {
         "shell": ["gnome-terminal", "--working-directory={path}", "--title={title}"],
         "amp": ["gnome-terminal", "--working-directory={path}",
-                "--title={title}", "--", "amp"],
-    },
-}
+                "--title={title}", "--", *get_amp_argv()],
+    }
+
+
+def _build_terminal_templates() -> dict[str, dict]:
+    """Build the OS → templates map at call time so env-var-driven flags
+    (e.g. ``--take-me-back``) are reflected in the launch command."""
+    return {
+        "win32": _win32_terminal_templates(),
+        "darwin": _darwin_terminal_templates(),
+        "linux": _linux_terminal_templates(),
+    }
 
 
 def _get_terminal_templates() -> dict:
@@ -994,7 +1010,8 @@ def _get_terminal_templates() -> dict:
     custom = config.get("terminal_commands")
     if custom and isinstance(custom, dict):
         return custom
-    return _TERMINAL_TEMPLATES.get(sys.platform, _TERMINAL_TEMPLATES.get("linux", {}))
+    templates = _build_terminal_templates()
+    return templates.get(sys.platform, templates.get("linux", {}))
 
 
 def _format_cmd(template: list[str], **kwargs: str) -> list[str]:

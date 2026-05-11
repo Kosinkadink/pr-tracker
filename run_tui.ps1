@@ -20,6 +20,12 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";
 # Build paths
 $python = Join-Path $ScriptDir ".venv\Scripts\python.exe"
 
+# Forward known startup args (e.g. --take-me-back) to the TUI command.
+$tuiArgs = ""
+if ($args -contains "--take-me-back") {
+    $tuiArgs = " --take-me-back"
+}
+
 # Check if tmux (psmux) is available
 $tmux = Get-Command tmux -ErrorAction SilentlyContinue
 if (-not $tmux) {
@@ -41,7 +47,7 @@ if ($tmux) {
 
         # Start the TUI inside the session.  Chain with 'exit' so the
         # shell closes when the TUI exits, which ends the tmux session.
-        & $tmuxBin send-keys -t pr-tracker:tui "& '$python' -m pr_tracker_tui; exit" Enter
+        & $tmuxBin send-keys -t pr-tracker:tui "& '$python' -m pr_tracker_tui$tuiArgs; exit" Enter
 
         # Apply neutral dark styling
         & $tmuxBin set -t pr-tracker status-style "bg=#1e3a5f,fg=#cccccc" 2>$null
