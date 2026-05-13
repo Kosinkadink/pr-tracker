@@ -215,14 +215,21 @@ class BaseListScreen(Screen):
         table.clear()
         self._filtered = []
         search = self._search_text.lower()
+        seen_keys: set[str] = set()
 
         for i, item in enumerate(self._item_data):
             if not self._should_include_item(item):
                 continue
             if search and not self._item_matches_search(item, search):
                 continue
+            row_key = self._item_row_key(item)
+            if row_key in seen_keys:
+                # Defensive: skip duplicates (e.g. from paginated GitHub
+                # responses where an item shifts between pages).
+                continue
+            seen_keys.add(row_key)
             self._filtered.append(i)
-            table.add_row(*self._coerce_row_cells(self._item_row_cells(item)), key=self._item_row_key(item))
+            table.add_row(*self._coerce_row_cells(self._item_row_cells(item)), key=row_key)
 
         self._restore_cursor()
 
