@@ -488,7 +488,9 @@ def cmd_linear_comment(args: argparse.Namespace) -> None:
 def cmd_linear_backfill(args: argparse.Namespace) -> None:
     """Walk a repo and mint Linear tickets for items missing a DESK2-N linkage."""
     from . import github_api
+    from .linear_data import extract_linear_identifier
     from .linear_ops import (
+        BranchSource,
         GitHubIssueSource,
         GitHubPRSource,
         compose_payload,
@@ -498,18 +500,27 @@ def cmd_linear_backfill(args: argparse.Namespace) -> None:
         resolve_target,
     )
 
-    if not args.prs and not args.issues:
-        raise SystemExit("backfill: pass at least --prs and/or --issues")
+    if not args.prs and not args.issues and not args.branches:
+        raise SystemExit("backfill: pass at least --prs, --issues, and/or --branches")
 
     from .config import linear_team_for_repo
     team_name = args.team or linear_team_for_repo(args.repo)
     target = resolve_target(team_name=team_name, state_alias=args.state)
     candidates: list[tuple[str, dict]] = []  # (kind, raw)
 
-    if args.prs:
+    # Branches that already have an open PR are covered by the --prs sweep;
+    # collect those branch names to avoid double-creating tickets.
+    branches_with_prs: set[str] = set()
+
+    if args.prs or args.branches:
         console.print(f"[dim]Fetching open PRs in {args.repo}...[/dim]")
         prs = github_api.fetch_prs(args.repo, state="open")
         for pr in prs:
+            ref = (pr.get("head") or {}).get("ref") or ""
+            if ref:
+                branches_with_prs.add(ref)
+            if not args.prs:
+                continue
             if find_pr_linear_identifier(pr):
                 continue
             candidates.append(("pr", pr))
@@ -522,6 +533,19 @@ def cmd_linear_backfill(args: argparse.Namespace) -> None:
                 continue
             candidates.append(("issue", issue))
 
+    if args.branches:
+        console.print(f"[dim]Fetching branches in {args.repo}...[/dim]")
+        branches = github_api.fetch_branches(args.repo)
+        for branch in branches:
+            name = branch.get("name", "")
+            if not name:
+                continue
+            if name in branches_with_prs:
+                continue  # already counted in PR sweep
+            if extract_linear_identifier(name):
+                continue  # already linked via branch name
+            candidates.append(("branch", branch))
+
     if not candidates:
         console.print("[dim]Nothing to backfill — all items already have a Linear identifier.[/dim]")
         return
@@ -532,22 +556,34 @@ def cmd_linear_backfill(args: argparse.Namespace) -> None:
 
     total_errors = 0
     for kind, raw in candidates:
-        n = raw["number"]
-        title = raw.get("title", "")
         if kind == "pr":
+            n = raw["number"]
+            title = raw.get("title", "")
             src = GitHubPRSource(repo=args.repo, number=n, fetched=raw)
             payload = compose_payload(pr_source=src)
-        else:
+            label = f"pr #{n}: {title[:80]}"
+            inject_pr = not args.no_pr_edit
+        elif kind == "issue":
+            n = raw["number"]
+            title = raw.get("title", "")
             src = GitHubIssueSource(repo=args.repo, number=n, fetched=raw)
             payload = compose_payload(issue_source=src)
+            label = f"issue #{n}: {title[:80]}"
+            inject_pr = False
+        else:  # branch
+            name = raw["name"]
+            src = BranchSource(repo=args.repo, branch=name)
+            payload = compose_payload(branch_source=src)
+            label = f"branch {name[:80]}"
+            inject_pr = False  # no PR yet
 
         action_label = "WOULD CREATE" if args.dry_run else "CREATING"
-        console.print(f"  [cyan]{action_label}[/cyan] {kind} #{n}: {title[:80]}")
+        console.print(f"  [cyan]{action_label}[/cyan] {label}")
         result = create_with_sources(
             target=target,
             payload=payload,
             priority=None,
-            inject_pr_body=(kind == "pr") and not args.no_pr_edit,
+            inject_pr_body=inject_pr,
             back_comment=not args.no_back_comment,
             dry_run=args.dry_run,
         )
@@ -917,6 +953,8 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_backfill.add_argument("--team", help="Linear team name or key")
     p_linear_backfill.add_argument("--prs", action="store_true", help="Include open PRs")
     p_linear_backfill.add_argument("--issues", action="store_true", help="Include open issues")
+    p_linear_backfill.add_argument("--branches", action="store_true",
+                                   help="Include branches without an open PR or DESK2-N in the name")
     p_linear_backfill.add_argument("--state", choices=state_choices, help="Initial workflow state for new issues")
     p_linear_backfill.add_argument("--no-pr-edit", action="store_true")
     p_linear_backfill.add_argument("--no-back-comment", action="store_true")
