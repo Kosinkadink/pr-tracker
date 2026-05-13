@@ -208,7 +208,10 @@ def cmd_linear(args: argparse.Namespace) -> None:
     """Route Linear subcommands."""
     action = getattr(args, "linear_action", None)
     if not action:
-        console.print("[red]Usage: pr_tracker linear {list|show|teams}[/red]")
+        console.print(
+            "[red]Usage: pr_tracker linear "
+            "{list|show|teams|create|link|move|comment|backfill|sync}[/red]"
+        )
         return
     action(args)
 
@@ -301,6 +304,251 @@ def cmd_linear_teams(args: argparse.Namespace) -> None:
     console.print("[bold]Available Linear teams:[/bold]")
     for t in teams:
         console.print(f"  [bold]{t['key']:8s}[/bold] {t['name']}")
+
+
+# ---------------------------------------------------------------------------
+# Linear write commands (create / link / move / comment / backfill / sync)
+# ---------------------------------------------------------------------------
+
+def _print_actions(label: str, actions: list[str]) -> None:
+    if not actions:
+        return
+    console.print(f"[bold]{label}[/bold]")
+    for a in actions:
+        if "FAILED" in a:
+            console.print(f"  [red]{a}[/red]")
+        else:
+            console.print(f"  [dim]•[/dim] {a}")
+
+
+def _build_sources(args: argparse.Namespace) -> dict:
+    """Translate --from-issue / --from-pr / --from-branch / --repo into source objects."""
+    from .data import parse_ref
+    from .linear_ops import BranchSource, GitHubIssueSource, GitHubPRSource
+
+    sources: dict = {"issue_source": None, "pr_source": None, "branch_source": None}
+
+    if getattr(args, "from_issue", None):
+        repo, n = parse_ref(args.from_issue)
+        sources["issue_source"] = GitHubIssueSource(repo=repo, number=n)
+    if getattr(args, "from_pr", None):
+        repo, n = parse_ref(args.from_pr)
+        sources["pr_source"] = GitHubPRSource(repo=repo, number=n)
+    if getattr(args, "from_branch", None):
+        repo = getattr(args, "repo", None)
+        if not repo:
+            raise SystemExit("--from-branch requires --repo owner/repo")
+        sources["branch_source"] = BranchSource(repo=repo, branch=args.from_branch)
+    return sources
+
+
+def cmd_linear_create(args: argparse.Namespace) -> None:
+    """Create a Linear issue from any combination of sources (or none)."""
+    from .linear_ops import compose_payload, create_with_sources, resolve_target
+
+    sources = _build_sources(args)
+    target = resolve_target(
+        team_name=args.team,
+        state_alias=args.state,
+        assignee=args.assignee,
+    )
+
+    payload = compose_payload(
+        title_override=args.title,
+        body_override=args.body,
+        **sources,
+    )
+
+    result = create_with_sources(
+        target=target,
+        payload=payload,
+        priority=args.priority,
+        inject_pr_body=not args.no_pr_edit,
+        back_comment=not args.no_back_comment,
+        dry_run=args.dry_run,
+    )
+
+    if args.dry_run:
+        console.print(f"[yellow]DRY RUN[/yellow] Would create in {target.team_key}: '{payload.title}'")
+        _print_actions("Planned actions:", result.actions)
+        return
+
+    console.print(
+        f"[green]Created[/green] [bold]{result.identifier}[/bold]: {result.url}"
+    )
+    _print_actions("Actions:", result.actions)
+
+
+def cmd_linear_link(args: argparse.Namespace) -> None:
+    """Attach a GitHub PR / issue / branch to an existing Linear ticket."""
+    from .data import parse_ref
+    from .linear_ops import BranchSource, GitHubIssueSource, GitHubPRSource, link_source
+
+    issue_source = None
+    pr_source = None
+    branch_source = None
+
+    if args.target:
+        repo, n = parse_ref(args.target)
+        # Try PR first, fall back to issue if not a PR
+        from . import github_api
+        try:
+            github_api.fetch_pr(repo, n)
+            pr_source = GitHubPRSource(repo=repo, number=n)
+        except RuntimeError:
+            issue_source = GitHubIssueSource(repo=repo, number=n)
+
+    if args.branch:
+        if not args.repo:
+            raise SystemExit("--branch requires --repo owner/repo")
+        branch_source = BranchSource(repo=args.repo, branch=args.branch)
+
+    if not (issue_source or pr_source or branch_source):
+        raise SystemExit("link: pass a target (e.g. owner/repo#123) and/or --branch")
+
+    result = link_source(
+        args.identifier,
+        issue_source=issue_source,
+        pr_source=pr_source,
+        branch_source=branch_source,
+        inject_pr_body=not args.no_pr_edit,
+        back_comment=args.back_comment,
+        dry_run=args.dry_run,
+    )
+
+    if args.dry_run:
+        console.print(f"[yellow]DRY RUN[/yellow] Would link to {result.identifier}")
+    else:
+        console.print(f"[green]Linked[/green] to {result.identifier}")
+    _print_actions("Actions:", result.actions)
+
+
+def cmd_linear_move(args: argparse.Namespace) -> None:
+    """Transition a Linear issue to a new state."""
+    from .linear_ops import move_issue
+
+    if args.dry_run:
+        result = move_issue(args.identifier, args.state, dry_run=True)
+        console.print(
+            f"[yellow]DRY RUN[/yellow] Would move {args.identifier} → {args.state} "
+            f"(state_id={result.get('would_set_state_id')})"
+        )
+        return
+    issue = move_issue(args.identifier, args.state)
+    state_name = (issue.get("state") or {}).get("name", args.state)
+    console.print(f"[green]Moved[/green] {args.identifier} → {state_name}")
+
+
+def cmd_linear_comment(args: argparse.Namespace) -> None:
+    """Post a comment on a Linear issue."""
+    from .linear_ops import comment_on_issue
+
+    if args.dry_run:
+        comment_on_issue(args.identifier, args.body, dry_run=True)
+        console.print(f"[yellow]DRY RUN[/yellow] Would comment on {args.identifier}")
+        return
+    comment_on_issue(args.identifier, args.body)
+    console.print(f"[green]Commented[/green] on {args.identifier}")
+
+
+def cmd_linear_backfill(args: argparse.Namespace) -> None:
+    """Walk a repo and mint Linear tickets for items missing a DESK2-N linkage."""
+    from . import github_api
+    from .linear_ops import (
+        GitHubIssueSource,
+        GitHubPRSource,
+        compose_payload,
+        create_with_sources,
+        find_issue_linear_identifier,
+        find_pr_linear_identifier,
+        resolve_target,
+    )
+
+    if not args.prs and not args.issues:
+        raise SystemExit("backfill: pass at least --prs and/or --issues")
+
+    target = resolve_target(team_name=args.team, state_alias=args.state)
+    candidates: list[tuple[str, dict]] = []  # (kind, raw)
+
+    if args.prs:
+        console.print(f"[dim]Fetching open PRs in {args.repo}...[/dim]")
+        prs = github_api.fetch_prs(args.repo, state="open")
+        for pr in prs:
+            if find_pr_linear_identifier(pr):
+                continue
+            candidates.append(("pr", pr))
+
+    if args.issues:
+        console.print(f"[dim]Fetching open issues in {args.repo}...[/dim]")
+        issues = github_api.fetch_repo_issues(args.repo, state="open")
+        for issue in issues:
+            if find_issue_linear_identifier(issue):
+                continue
+            candidates.append(("issue", issue))
+
+    if not candidates:
+        console.print("[dim]Nothing to backfill — all items already have a Linear identifier.[/dim]")
+        return
+
+    console.print(
+        f"[bold]{len(candidates)} item(s) to backfill[/bold] in team {target.team_key}"
+    )
+
+    for kind, raw in candidates:
+        n = raw["number"]
+        title = raw.get("title", "")
+        if kind == "pr":
+            src = GitHubPRSource(repo=args.repo, number=n, fetched=raw)
+            payload = compose_payload(pr_source=src)
+        else:
+            src = GitHubIssueSource(repo=args.repo, number=n, fetched=raw)
+            payload = compose_payload(issue_source=src)
+
+        action_label = "WOULD CREATE" if args.dry_run else "CREATING"
+        console.print(f"  [cyan]{action_label}[/cyan] {kind} #{n}: {title[:80]}")
+        result = create_with_sources(
+            target=target,
+            payload=payload,
+            priority=None,
+            inject_pr_body=(kind == "pr") and not args.no_pr_edit,
+            back_comment=not args.no_back_comment,
+            dry_run=args.dry_run,
+        )
+        if not args.dry_run:
+            console.print(f"    → [green]{result.identifier}[/green] {result.url}")
+
+    if args.dry_run:
+        console.print("[yellow]DRY RUN[/yellow] — re-run with --apply to perform.")
+
+
+def cmd_linear_sync(args: argparse.Namespace) -> None:
+    """Reconcile merged PRs whose Linear ticket didn't auto-close."""
+    from .linear_ops import find_unclosed_after_merge, move_issue
+
+    console.print(f"[dim]Looking for merged PRs in {args.repo} (last {args.closed_since}d)...[/dim]")
+    mismatches = find_unclosed_after_merge(args.repo, closed_since_days=args.closed_since)
+
+    if not mismatches:
+        console.print("[green]Nothing to reconcile.[/green]")
+        return
+
+    console.print(f"[bold]{len(mismatches)} mismatch(es) found:[/bold]")
+    for m in mismatches:
+        console.print(
+            f"  [yellow]{m['identifier']}[/yellow] (Linear: {m['linear_state']}) "
+            f"← {m['pr_repo']}#{m['pr_number']} merged {m['pr_merged_at']}"
+        )
+
+    if not args.apply:
+        console.print("[yellow]DRY RUN[/yellow] — re-run with --apply to move tickets to Done.")
+        return
+
+    for m in mismatches:
+        try:
+            move_issue(m["identifier"], "done")
+            console.print(f"  [green]Moved[/green] {m['identifier']} → Done")
+        except Exception as e:
+            console.print(f"  [red]FAILED[/red] {m['identifier']}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +792,87 @@ def main(argv: list[str] | None = None) -> None:
 
     p_linear_teams = linear_sub.add_parser("teams", help="List available Linear teams")
     p_linear_teams.set_defaults(linear_action=cmd_linear_teams)
+
+    # Linear write commands ----------------------------------------------
+
+    state_choices = ["todo", "in-progress", "in-review", "done", "cancelled", "backlog"]
+    priority_choices = ["urgent", "high", "medium", "low", "no-priority", "0", "1", "2", "3", "4"]
+
+    p_linear_create = linear_sub.add_parser(
+        "create",
+        help="Create a Linear issue from any combination of sources (or none)",
+    )
+    p_linear_create.add_argument("--team", help="Linear team name or key (defaults to first linear_teams entry)")
+    p_linear_create.add_argument("--title", help="Override the inferred issue title")
+    p_linear_create.add_argument("--body", help="Override the inferred issue body")
+    p_linear_create.add_argument("--priority", choices=priority_choices)
+    p_linear_create.add_argument("--state", choices=state_choices, help="Initial workflow state")
+    p_linear_create.add_argument("--assignee", help="'me' or a Linear user ID")
+    p_linear_create.add_argument("--from-issue", metavar="REF", help="Mirror a GitHub issue (e.g. owner/repo#123)")
+    p_linear_create.add_argument("--from-pr", metavar="REF", help="Track a GitHub PR (e.g. owner/repo#123)")
+    p_linear_create.add_argument("--from-branch", metavar="BRANCH", help="Track a branch (requires --repo)")
+    p_linear_create.add_argument("--repo", help="owner/repo (used with --from-branch)")
+    p_linear_create.add_argument("--no-pr-edit", action="store_true",
+                                 help="Skip injecting 'Fixes DESK2-N' into the PR body")
+    p_linear_create.add_argument("--no-back-comment", action="store_true",
+                                 help="Skip courtesy comment back on the GitHub source")
+    p_linear_create.add_argument("--dry-run", action="store_true", help="Print actions without performing them")
+    p_linear_create.set_defaults(linear_action=cmd_linear_create)
+
+    p_linear_link = linear_sub.add_parser(
+        "link",
+        help="Attach a GitHub PR / issue / branch to an existing Linear ticket",
+    )
+    p_linear_link.add_argument("identifier", help="Linear identifier (e.g. DESK2-42)")
+    p_linear_link.add_argument("target", nargs="?", help="GitHub ref (e.g. owner/repo#123)")
+    p_linear_link.add_argument("--branch", help="Branch name to attach (requires --repo)")
+    p_linear_link.add_argument("--repo", help="owner/repo (used with --branch)")
+    p_linear_link.add_argument("--no-pr-edit", action="store_true",
+                               help="Skip injecting 'Fixes DESK2-N' into the PR body")
+    p_linear_link.add_argument("--back-comment", action="store_true",
+                               help="Post a courtesy comment back on the GitHub source")
+    p_linear_link.add_argument("--dry-run", action="store_true")
+    p_linear_link.set_defaults(linear_action=cmd_linear_link)
+
+    p_linear_move = linear_sub.add_parser("move", help="Transition a Linear issue to a new state")
+    p_linear_move.add_argument("identifier", help="Linear identifier (e.g. DESK2-42)")
+    p_linear_move.add_argument("state", choices=state_choices)
+    p_linear_move.add_argument("--dry-run", action="store_true")
+    p_linear_move.set_defaults(linear_action=cmd_linear_move)
+
+    p_linear_comment = linear_sub.add_parser("comment", help="Post a comment on a Linear issue")
+    p_linear_comment.add_argument("identifier", help="Linear identifier (e.g. DESK2-42)")
+    p_linear_comment.add_argument("body", help="Comment body")
+    p_linear_comment.add_argument("--dry-run", action="store_true")
+    p_linear_comment.set_defaults(linear_action=cmd_linear_comment)
+
+    p_linear_backfill = linear_sub.add_parser(
+        "backfill",
+        help="Walk a repo and mint Linear tickets for items missing a DESK2-N linkage",
+    )
+    p_linear_backfill.add_argument("--repo", required=True, help="owner/repo to walk")
+    p_linear_backfill.add_argument("--team", help="Linear team name or key")
+    p_linear_backfill.add_argument("--prs", action="store_true", help="Include open PRs")
+    p_linear_backfill.add_argument("--issues", action="store_true", help="Include open issues")
+    p_linear_backfill.add_argument("--state", choices=state_choices, help="Initial workflow state for new issues")
+    p_linear_backfill.add_argument("--no-pr-edit", action="store_true")
+    p_linear_backfill.add_argument("--no-back-comment", action="store_true")
+    backfill_mode = p_linear_backfill.add_mutually_exclusive_group()
+    backfill_mode.add_argument("--dry-run", action="store_true", default=True,
+                               help="Default: show what would happen without writing")
+    backfill_mode.add_argument("--apply", dest="dry_run", action="store_false",
+                               help="Actually create the Linear tickets")
+    p_linear_backfill.set_defaults(linear_action=cmd_linear_backfill)
+
+    p_linear_sync = linear_sub.add_parser(
+        "sync",
+        help="Reconcile merged PRs whose Linear ticket didn't auto-close",
+    )
+    p_linear_sync.add_argument("--repo", required=True, help="owner/repo to scan")
+    p_linear_sync.add_argument("--closed-since", type=int, default=7,
+                               help="Look at PRs closed in the last N days (default: 7)")
+    p_linear_sync.add_argument("--apply", action="store_true", help="Move mismatched tickets to Done")
+    p_linear_sync.set_defaults(linear_action=cmd_linear_sync)
 
     # Slack
     p_slack = sub.add_parser("slack", help="Slack mention tracking")

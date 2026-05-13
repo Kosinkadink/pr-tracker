@@ -204,3 +204,81 @@ def extract_linear_identifier(branch_name: str) -> str | None:
         return f"{m.group(1)}-{m.group(2)}"
     return None
 
+
+# ---------------------------------------------------------------------------
+# Auto-injection: ensure GitHub PR body contains "Fixes DESK2-N"
+# ---------------------------------------------------------------------------
+
+# Linear's GitHub bot recognises any of these closing-keyword patterns.
+# We use "Fixes" by convention so it's grep-able in PR descriptions.
+_LINEAR_FIXES_RE = re.compile(
+    r"(?:closes|fixes|resolves|fix|close|resolve)\s+([A-Z][A-Z0-9]{1,9}-\d+)",
+    re.IGNORECASE,
+)
+
+_AUTO_INJECT_MARKER = "<!-- pr-tracker:linear-link -->"
+
+
+def pr_body_has_linear_link(body: str | None, identifier: str) -> bool:
+    """True when *body* already contains a closing-keyword reference to *identifier*.
+
+    Matches things like "Fixes DESK2-42", "Closes desk2-42", or just a bare
+    identifier string anywhere (the bot doesn't require closing keywords for
+    attachment, but we want closing-keyword semantics so it auto-closes).
+    """
+    if not body:
+        return False
+    upper_id = identifier.upper()
+    for m in _LINEAR_FIXES_RE.finditer(body):
+        if m.group(1).upper() == upper_id:
+            return True
+    # Also accept a plain identifier on its own line (for legacy PRs).
+    plain_re = re.compile(rf"\b{re.escape(upper_id)}\b")
+    return bool(plain_re.search(body.upper()))
+
+
+def inject_linear_link_into_body(body: str | None, identifier: str) -> str:
+    """Return a new PR body with a ``Fixes DESK2-N`` line appended, idempotently.
+
+    No-ops if the identifier is already present.  Adds a marker so subsequent
+    edits can detect a previous auto-injection and avoid duplicate sections.
+    """
+    upper_id = identifier.upper()
+    body = body or ""
+    if pr_body_has_linear_link(body, upper_id):
+        return body
+    suffix = f"\n\n{_AUTO_INJECT_MARKER}\nFixes {upper_id}\n"
+    return (body.rstrip() + suffix).lstrip("\n")
+
+
+# ---------------------------------------------------------------------------
+# Source resolution
+# ---------------------------------------------------------------------------
+
+def build_back_comment(identifier: str, url: str) -> str:
+    """Comment body posted back on the source GitHub issue/PR."""
+    return (
+        f"Tracked in Linear: [{identifier}]({url}).\n\n"
+        f"<sub>Auto-posted by pr-tracker.</sub>"
+    )
+
+
+def resolve_priority(value: str | int | None) -> int | None:
+    """Map a CLI priority value to Linear's 0-4 scale."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, int):
+        return value
+    name_map = {
+        "no-priority": 0, "none": 0,
+        "urgent": 1,
+        "high": 2,
+        "medium": 3,
+        "low": 4,
+    }
+    s = str(value).strip().lower()
+    if s.isdigit():
+        n = int(s)
+        return n if 0 <= n <= 4 else None
+    return name_map.get(s)
+
