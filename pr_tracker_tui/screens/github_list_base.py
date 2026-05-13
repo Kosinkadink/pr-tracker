@@ -296,6 +296,64 @@ class GitHubListScreen(BaseListScreen):
         """Return pin item_type ('pr' or 'issue'). Override in subclass."""
         return "pr"
 
+    def _linear_kind(self) -> str:
+        """Return the source kind for LinearCreateScreen ('pr' / 'issue' / 'branch').
+
+        Defaults to ``_pin_type()`` since the two happen to align for all
+        existing list screens.
+        """
+        return self._pin_type()
+
+    def action_create_linear(self) -> None:
+        """C key: create a Linear issue from the selected row."""
+        item = self._selected_item()
+        if not item:
+            self.notify("No item selected")
+            return
+        from .linear_create import LinearCreateScreen
+        self.app.push_screen(
+            LinearCreateScreen(item, kind=self._linear_kind()),
+            callback=self._on_linear_create_result,
+        )
+
+    def _on_linear_create_result(self, result: dict | None) -> None:
+        if not result:
+            return
+        item = self._selected_item()
+        if not item:
+            return
+        # Splat pill fields onto the row dict so the cell renderer picks
+        # them up immediately.
+        for k, v in result.items():
+            item[k] = v
+        self._refresh_selected_row()
+
+    def action_move_linear(self) -> None:
+        """M key: move the linked Linear issue to a new state."""
+        item = self._selected_item()
+        if not item:
+            self.notify("No item selected")
+            return
+        identifier = item.get("linear_identifier") or ""
+        if not identifier:
+            self.notify("No Linear issue linked to this row")
+            return
+        from .linear_state_picker import LinearStatePickerScreen
+        self.app.push_screen(
+            LinearStatePickerScreen(identifier, current_state=item.get("linear_state_name", "")),
+            callback=self._on_linear_move_result,
+        )
+
+    def _on_linear_move_result(self, result: dict | None) -> None:
+        if not result:
+            return
+        item = self._selected_item()
+        if not item:
+            return
+        for k, v in result.items():
+            item[k] = v
+        self._refresh_selected_row()
+
     def action_toggle_people(self) -> None:
         self._people_only = not self._people_only
         label = "tracked people only" if self._people_only else "all authors"

@@ -37,6 +37,8 @@ class PRListScreen(GitHubListScreen):
         Binding("W", "create_station", "New Station"),
         Binding("l", "toggle_log", "Log"),
         Binding("L", "switch_to_linear", "Linear"),
+        Binding("C", "create_linear", "New Linear"),
+        Binding("M", "move_linear", "Linear State"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -162,7 +164,7 @@ class PRListScreen(GitHubListScreen):
             indicators += "🌐?" if self.app.remote_deploys_stale else "🌐"
         num_str = f"{item['number']} {indicators}" if indicators else str(item["number"])
 
-        linear_cell = _linear_pill_text(item)
+        linear_cell = _linear_pill_text(item, repo=item.get("repo"))
 
         return (
             num_str,

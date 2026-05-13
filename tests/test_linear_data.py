@@ -375,6 +375,112 @@ def test_fetch_issue_by_identifier_accepts_team_with_digits(monkeypatch):
     assert "number: { eq: 42 }" in captured["query"]
 
 
+# ---------------------------------------------------------------------------
+# Phase 5.1: linear_repo_teams config mapping
+# ---------------------------------------------------------------------------
+
+def test_linear_team_for_repo_returns_mapped_team(monkeypatch):
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_teams": ["Core Engine", "Desktop"],
+        "linear_repo_teams": {
+            "Comfy-Org/ComfyUI-Desktop-2.0-Beta": "DESK2",
+            "Comfy-Org/ComfyUI": "CORE",
+        },
+    })
+    assert cfg.linear_team_for_repo("Comfy-Org/ComfyUI-Desktop-2.0-Beta") == "DESK2"
+    assert cfg.linear_team_for_repo("Comfy-Org/ComfyUI") == "CORE"
+
+
+def test_linear_team_for_repo_case_insensitive(monkeypatch):
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": {"Comfy-Org/ComfyUI-Desktop-2.0-Beta": "DESK2"},
+    })
+    assert cfg.linear_team_for_repo("comfy-org/comfyui-desktop-2.0-beta") == "DESK2"
+
+
+def test_linear_team_for_repo_returns_none_when_unmapped(monkeypatch):
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": {"Comfy-Org/ComfyUI": "CORE"},
+    })
+    assert cfg.linear_team_for_repo("Some/OtherRepo") is None
+    assert cfg.linear_team_for_repo("") is None
+    assert cfg.linear_team_for_repo(None) is None
+
+
+def test_linear_team_for_repo_handles_missing_mapping_key(monkeypatch):
+    """Backwards-compatibility: configs without ``linear_repo_teams`` must still load."""
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_teams": ["Core Engine"],
+    })
+    cfg_data = cfg.load_linear_config()
+    assert cfg_data["linear_repo_teams"] == {}
+    assert cfg.linear_team_for_repo("Comfy-Org/ComfyUI") is None
+
+
+def test_linear_team_for_repo_handles_malformed_mapping(monkeypatch):
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": "not-a-dict",
+    })
+    cfg_data = cfg.load_linear_config()
+    assert cfg_data["linear_repo_teams"] == {}
+    assert cfg.linear_team_for_repo("Comfy-Org/ComfyUI") is None
+
+
+def test_team_from_sources_picks_first_mapped(monkeypatch):
+    """cli._team_from_sources walks PR → issue → branch and uses first mapped repo."""
+    from pr_tracker import cli, config as cfg
+    from pr_tracker.linear_ops import BranchSource, GitHubIssueSource, GitHubPRSource
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": {"Comfy-Org/ComfyUI-Desktop-2.0-Beta": "DESK2"},
+    })
+
+    # PR source → uses PR's repo
+    sources = {
+        "pr_source": GitHubPRSource(repo="Comfy-Org/ComfyUI-Desktop-2.0-Beta", number=1),
+        "issue_source": None,
+        "branch_source": None,
+    }
+    assert cli._team_from_sources(sources) == "DESK2"
+
+    # Branch source on unmapped repo → returns None (caller falls back to default)
+    sources = {
+        "pr_source": None,
+        "issue_source": None,
+        "branch_source": BranchSource(repo="Some/UnmappedRepo", branch="x"),
+    }
+    assert cli._team_from_sources(sources) is None
+
+    # No sources at all → None
+    assert cli._team_from_sources({"pr_source": None, "issue_source": None, "branch_source": None}) is None
+
+
+def test_team_from_sources_falls_through_to_issue(monkeypatch):
+    """When PR source's repo is unmapped but issue source is mapped, use the issue."""
+    from pr_tracker import cli, config as cfg
+    from pr_tracker.linear_ops import GitHubIssueSource, GitHubPRSource
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": {"Comfy-Org/ComfyUI": "CORE"},
+    })
+    sources = {
+        "pr_source": GitHubPRSource(repo="Some/UnmappedRepo", number=1),
+        "issue_source": GitHubIssueSource(repo="Comfy-Org/ComfyUI", number=2),
+        "branch_source": None,
+    }
+    assert cli._team_from_sources(sources) == "CORE"
+
+
 def test_apply_linear_states_skips_when_no_identifiers(monkeypatch):
     """No PRs with a linkage → no API call made."""
     import pr_tracker.data as data_mod
@@ -389,3 +495,98 @@ def test_apply_linear_states_skips_when_no_identifiers(monkeypatch):
     )
     data_mod.apply_linear_states([{"linear_identifier": ""}])
     assert calls["count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.4: Pill team hint + merged-mismatch glyph
+# ---------------------------------------------------------------------------
+
+def test_pill_shows_team_hint_when_no_identifier(monkeypatch):
+    """A row with no Linear linkage but a configured repo team shows
+    ``+ TEAM?`` in dim yellow rather than the bare ``-``."""
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": {"Comfy-Org/ComfyUI-Desktop-2.0-Beta": "DESK2"},
+    })
+    cell = _linear_pill_text(
+        {"linear_identifier": "", "repo": "Comfy-Org/ComfyUI-Desktop-2.0-Beta"}
+    )
+    assert str(cell) == "+ DESK2?"
+    assert "yellow" in str(cell.style)
+    assert "dim" in str(cell.style)
+
+
+def test_pill_shows_team_hint_when_repo_arg_passed(monkeypatch):
+    """The renderer also accepts ``repo`` as an explicit kwarg (for callers
+    whose item dict doesn't carry the repo, e.g. table-level rendering)."""
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": {"Comfy-Org/ComfyUI": "CORE"},
+    })
+    cell = _linear_pill_text({"linear_identifier": ""}, repo="Comfy-Org/ComfyUI")
+    assert str(cell) == "+ CORE?"
+
+
+def test_pill_dim_dash_when_no_identifier_and_unmapped_repo(monkeypatch):
+    """No identifier and no team mapping → fall back to ``-``."""
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {
+        "linear_repo_teams": {},
+    })
+    cell = _linear_pill_text(
+        {"linear_identifier": "", "repo": "Some/Unmapped"}
+    )
+    assert str(cell) == "-"
+
+
+def test_pill_mismatch_glyph_when_merged_pr_has_active_ticket(monkeypatch):
+    """Merged PR + Linear ticket still in ``started`` / ``unstarted`` → ⚠ prefix."""
+    from pr_tracker import config as cfg
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {})
+
+    started = _linear_pill_text({
+        "linear_identifier": "DESK2-42",
+        "linear_state_name": "In Review",
+        "linear_state_type": "started",
+        "state_label": "merged",
+    })
+    assert str(started) == "⚠ DESK2-42 · In Review"
+
+    unstarted = _linear_pill_text({
+        "linear_identifier": "DESK2-99",
+        "linear_state_name": "Todo",
+        "linear_state_type": "unstarted",
+        "state_label": "merged",
+    })
+    assert str(unstarted) == "⚠ DESK2-99 · Todo"
+
+
+def test_pill_no_mismatch_glyph_when_pr_open(monkeypatch):
+    """Open PRs with active Linear tickets are normal — no ⚠."""
+    from pr_tracker import config as cfg
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {})
+
+    cell = _linear_pill_text({
+        "linear_identifier": "DESK2-42",
+        "linear_state_name": "In Review",
+        "linear_state_type": "started",
+        "state_label": "open",
+    })
+    assert str(cell) == "DESK2-42 · In Review"
+
+
+def test_pill_no_mismatch_glyph_when_merged_and_completed(monkeypatch):
+    """Merged PR + completed/cancelled Linear ticket → no ⚠."""
+    from pr_tracker import config as cfg
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {})
+
+    cell = _linear_pill_text({
+        "linear_identifier": "DESK2-42",
+        "linear_state_name": "Done",
+        "linear_state_type": "completed",
+        "state_label": "merged",
+    })
+    assert str(cell) == "DESK2-42 · Done"

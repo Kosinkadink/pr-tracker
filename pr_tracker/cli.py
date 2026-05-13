@@ -344,13 +344,27 @@ def _build_sources(args: argparse.Namespace) -> dict:
     return sources
 
 
+def _team_from_sources(sources: dict) -> str | None:
+    """Return the configured Linear team for the first source's repo, if any."""
+    from .config import linear_team_for_repo
+
+    for src in (sources.get("pr_source"), sources.get("issue_source"), sources.get("branch_source")):
+        if src is None:
+            continue
+        team = linear_team_for_repo(getattr(src, "repo", None))
+        if team:
+            return team
+    return None
+
+
 def cmd_linear_create(args: argparse.Namespace) -> None:
     """Create a Linear issue from any combination of sources (or none)."""
     from .linear_ops import compose_payload, create_with_sources, resolve_target
 
     sources = _build_sources(args)
+    team_name = args.team or _team_from_sources(sources)
     target = resolve_target(
-        team_name=args.team,
+        team_name=team_name,
         state_alias=args.state,
         assignee=args.assignee,
     )
@@ -479,7 +493,9 @@ def cmd_linear_backfill(args: argparse.Namespace) -> None:
     if not args.prs and not args.issues:
         raise SystemExit("backfill: pass at least --prs and/or --issues")
 
-    target = resolve_target(team_name=args.team, state_alias=args.state)
+    from .config import linear_team_for_repo
+    team_name = args.team or linear_team_for_repo(args.repo)
+    target = resolve_target(team_name=team_name, state_alias=args.state)
     candidates: list[tuple[str, dict]] = []  # (kind, raw)
 
     if args.prs:

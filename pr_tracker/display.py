@@ -91,23 +91,55 @@ _LINEAR_PILL_STYLES = {
     "cancelled": "red",
 }
 
+# Linear state types that indicate the ticket is still active.  Used to flag
+# merged PRs whose Linear ticket hasn't been moved to a completed state.
+_LINEAR_ACTIVE_TYPES = {"started", "unstarted"}
 
-def _linear_pill_text(pr: dict[str, Any]) -> Text:
+
+def _linear_pill_text(pr: dict[str, Any], repo: str | None = None) -> Text:
     """Render a small ``DESK2-42 · In Review`` pill for a PR row.
 
-    Returns a dim ``-`` when the PR has no Linear linkage and an annotated
-    identifier (no state) when the linkage is known but the state hasn't been
-    fetched (e.g. Linear API offline).
+    When the PR has no Linear linkage but its repo is mapped to a Linear team
+    in ``linear_repo_teams`` config, returns a dim yellow ``+ TEAM?`` hint.
+    Otherwise returns a dim ``-``.
+
+    For merged PRs whose Linear ticket is still in an active state
+    (``started`` / ``unstarted``), prefixes a ``⚠ `` mismatch glyph.
     """
     ident = pr.get("linear_identifier") or ""
     if not ident:
+        team = _team_hint_for_repo(repo or pr.get("repo"))
+        if team:
+            return Text(f"+ {team}?", style="dim yellow")
         return Text("-", style="dim")
     state_name = pr.get("linear_state_name") or ""
     state_type = pr.get("linear_state_type") or ""
     style = _LINEAR_PILL_STYLES.get(state_type, "white")
+    is_merged = (pr.get("state_label") or "") == "merged"
+    mismatch = is_merged and state_type in _LINEAR_ACTIVE_TYPES
+    prefix = "⚠ " if mismatch else ""
     if state_name:
-        return Text(f"{ident} · {state_name}", style=style)
-    return Text(ident, style="dim")
+        text = Text(f"{prefix}{ident} · {state_name}", style=style)
+    else:
+        text = Text(f"{prefix}{ident}", style="dim")
+    return text
+
+
+def _team_hint_for_repo(repo: str | None) -> str | None:
+    """Return the configured Linear team key for a repo, if any.
+
+    Imported lazily to avoid a circular import between display and config.
+    """
+    if not repo:
+        return None
+    try:
+        from pr_tracker.config import linear_team_for_repo
+    except Exception:
+        return None
+    try:
+        return linear_team_for_repo(repo)
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +177,7 @@ def render_pr_table(
         title_link = Text(pr.get("title", ""), style=f"link {pr_url}")
 
         # Make the Linear pill clickable when we know its URL
-        linear_cell = _linear_pill_text(pr)
+        linear_cell = _linear_pill_text(pr, repo=repo)
         linear_url = pr.get("linear_url") or ""
         if linear_url:
             linear_cell.stylize(f"link {linear_url}")
