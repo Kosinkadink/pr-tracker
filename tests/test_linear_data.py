@@ -356,6 +356,25 @@ def test_apply_linear_states_populates_fields(monkeypatch):
     assert "linear_state_name" not in prs[2]
 
 
+def test_fetch_issue_by_identifier_accepts_team_with_digits(monkeypatch):
+    """Regression: team keys like 'DESK2' (with digits) used to return None
+    because the parser regex required letters-only team keys."""
+    from pr_tracker import linear_api
+
+    captured: dict = {}
+    def fake_query(query, variables=None, cache_key=""):
+        captured["query"] = query
+        captured["cache_key"] = cache_key
+        return {"issues": {"nodes": [{"identifier": "DESK2-42"}]}}
+
+    monkeypatch.setattr(linear_api, "_query", fake_query)
+    issue = linear_api.fetch_issue_by_identifier("DESK2-42")
+    assert issue == {"identifier": "DESK2-42"}
+    # Make sure the query actually used the right team key + number
+    assert 'team: { key: { eq: "DESK2" } }' in captured["query"]
+    assert "number: { eq: 42 }" in captured["query"]
+
+
 def test_apply_linear_states_skips_when_no_identifiers(monkeypatch):
     """No PRs with a linkage → no API call made."""
     import pr_tracker.data as data_mod

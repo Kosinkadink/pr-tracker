@@ -251,7 +251,8 @@ def fetch_issue_by_identifier(identifier: str) -> dict | None:
     Returns the issue dict or None if not found.
     """
     import re
-    m = re.match(r"^([A-Za-z]+)-(\d+)$", identifier.strip())
+    # Team keys may contain digits (e.g. DESK2), so allow [A-Za-z][A-Za-z0-9]*
+    m = re.match(r"^([A-Za-z][A-Za-z0-9]*)-(\d+)$", identifier.strip())
     if not m:
         return None
     team_key = m.group(1).upper()
