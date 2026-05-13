@@ -62,7 +62,7 @@ To be added to `ComfyUI-Launcher/AGENTS.md` once Phase 4 ships.
 
 ## Phase 4 — pr-tracker write commands ✅ MOSTLY DONE (PR #11)
 
-Status: `create`, `link`, `move`, `comment`, `backfill`, `sync` shipped. Outstanding gaps tracked below — `--from-commit`, `--from-thread`, `--rename-branch`, `linear backfill --branches`, and `linear comment --from-pr` context formatting.
+Status: `create`, `link`, `move`, `comment`, `backfill`, `sync` shipped. `linear comment --from-pr / --from-issue / --from-branch` context formatting also shipped (Phase 4 follow-up). Outstanding gaps tracked below — `--from-commit`, `--from-thread`, `--rename-branch`, and `linear backfill --branches`.
 
 
 All commands live under `pr_tracker linear`. All `--from-*` flags are **optional and stackable**. `--title`/`--body` always overrides whatever the source provides.
@@ -107,7 +107,7 @@ All commands live under `pr_tracker linear`. All `--from-*` flags are **optional
 
 ---
 
-## Phase 5 — Surface Linear in the daily PR view (~half day)
+## Phase 5 — Surface Linear in the daily PR view (~half day) ✅ DONE (PR `feat/linear-pr-pills`)
 
 In the existing `pr_tracker` default view and TUI:
 
@@ -116,9 +116,22 @@ In the existing `pr_tracker` default view and TUI:
   - `pr_tracker --linear-state active` — PRs whose Linear ticket is started/unstarted
   - `pr_tracker --no-linear` — PRs missing a `DESK2-N` linkage (candidates for `linear create --from-pr`)
 - TUI: a key (e.g. `L`) on a PR row jumps to the existing `LinearIssueDetailScreen` for the linked ticket. ✅ `L` is now context-aware — falls back to the team list when the row has no linkage.
-- **Mismatch warnings** rendered inline (deferred — needs cross-checking PR attachments which is a follow-up):
-  - PR has Linear attachment but no `DESK2-N` in branch/title/body → ⚠ "auto-close will miss this; run `linear link --no-pr-edit` was used or fix manually".
-  - PR is merged but Linear ticket still "In Progress"/"In Review" → ⚠ "bot didn't fire; run `linear sync` or transition manually".
+- **Phase 5.1 — repo→team config plumbing** ✅
+  - `config/pr-tracker.json` accepts a `linear_repo_teams` mapping (e.g. `{"Comfy-Org/desktop": "DESK2"}`).
+  - `pr_tracker.config.linear_team_for_repo(repo)` resolves a repo to its default Linear team key; case-insensitive, returns `None` when unmapped.
+  - `cli.cmd_linear_create` and `cli.cmd_linear_backfill` use this to default the team without a `--team` flag.
+- **Phase 5.2 — TUI create flow** ✅
+  - `pr_tracker_tui/screens/linear_create.py` (`LinearCreateScreen`) is a reusable modal that auto-picks the team from the row's repo, pre-fills title/body from the PR/issue/branch, and lets the user edit state, priority, and assignee before submitting.
+  - Bound to `C` in `pr_list`, `issue_list`, and `branch_list` via the shared `GitHubListScreen.action_create_linear`.
+- **Phase 5.3 — TUI move flow** ✅
+  - `pr_tracker_tui/screens/linear_state_picker.py` (`LinearStatePickerScreen`) is a modal for picking a workflow state for the row's linked ticket; calls `linear_ops.move_issue` and updates the row/detail in place.
+  - Bound to `M` in `pr_list`, `branch_list`, and `linear_issue_detail`.
+- **Phase 5.4 — pill hints + mismatch glyph** ✅
+  - When a row has no `DESK2-N` but its repo is mapped via `linear_repo_teams`, the pill renders `+ TEAM?` in dim yellow as a hint to run `C` / `linear create --from-pr`.
+  - Merged PRs whose Linear ticket is still in `started` / `unstarted` get a leading `⚠` glyph on the pill — Linear's bot didn't auto-close; run `linear sync` or transition manually.
+  - Implemented in `pr_tracker.display._linear_pill_text(pr, repo=None)` (also wired through the TUI cell renderer).
+- **Mismatch warnings still deferred** (needs cross-checking Linear attachments — a follow-up):
+  - PR has a Linear attachment but no `DESK2-N` in branch/title/body → ⚠ "auto-close will miss this; run `linear link --no-pr-edit` was used or fix manually".
 
 ---
 

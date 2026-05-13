@@ -471,6 +471,44 @@ def comment_on_issue(identifier: str, body: str, *, dry_run: bool = False) -> di
     return linear_api.create_comment(detail["id"], body)
 
 
+def format_comment_context(
+    body: str,
+    *,
+    pr_source: GitHubPRSource | None = None,
+    issue_source: GitHubIssueSource | None = None,
+    branch_source: BranchSource | None = None,
+) -> str:
+    """Wrap *body* with a markdown context block for the given sources.
+
+    The context block lists each source as a one-line markdown link with its
+    title (for PRs/issues) or branch name.  Sources are listed in the order
+    PR → issue → branch.  Returns *body* unchanged when no sources are given.
+    """
+    lines: list[str] = []
+    if pr_source is not None:
+        try:
+            pr = pr_source.fetch()
+            title = pr.get("title", "")
+        except Exception:
+            title = ""
+        suffix = f" — {title}" if title else ""
+        lines.append(f"- PR: [{pr_source.repo}#{pr_source.number}]({pr_source.url}){suffix}")
+    if issue_source is not None:
+        try:
+            issue = issue_source.fetch()
+            title = issue.get("title", "")
+        except Exception:
+            title = ""
+        suffix = f" — {title}" if title else ""
+        lines.append(f"- Issue: [{issue_source.repo}#{issue_source.number}]({issue_source.url}){suffix}")
+    if branch_source is not None:
+        lines.append(f"- Branch: [`{branch_source.branch}`]({branch_source.url}) ({branch_source.repo})")
+    if not lines:
+        return body
+    context_block = "**Context:**\n" + "\n".join(lines)
+    return f"{body}\n\n---\n\n{context_block}" if body else context_block
+
+
 # ---------------------------------------------------------------------------
 # Backfill: walk a repo, mint Linear tickets for items missing a DESK2-N
 # ---------------------------------------------------------------------------

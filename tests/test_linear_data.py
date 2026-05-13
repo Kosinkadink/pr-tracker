@@ -590,3 +590,94 @@ def test_pill_no_mismatch_glyph_when_merged_and_completed(monkeypatch):
         "state_label": "merged",
     })
     assert str(cell) == "DESK2-42 · Done"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 follow-up: linear comment --from-pr / --from-issue / --from-branch
+# ---------------------------------------------------------------------------
+
+def test_format_comment_context_no_sources_returns_body_unchanged():
+    from pr_tracker.linear_ops import format_comment_context
+
+    out = format_comment_context("Hello world")
+    assert out == "Hello world"
+
+
+def test_format_comment_context_with_pr_source(monkeypatch):
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import GitHubPRSource, format_comment_context
+
+    monkeypatch.setattr(
+        linear_ops.github_api, "fetch_pr",
+        lambda repo, n: {"title": "Fix the thing"},
+    )
+    src = GitHubPRSource(repo="Comfy-Org/ComfyUI", number=42)
+    out = format_comment_context("See diff.", pr_source=src)
+    assert "See diff." in out
+    assert "**Context:**" in out
+    assert "[Comfy-Org/ComfyUI#42](https://github.com/Comfy-Org/ComfyUI/pull/42)" in out
+    assert "Fix the thing" in out
+    assert "---" in out  # body / context separator
+
+
+def test_format_comment_context_with_branch_source():
+    from pr_tracker.linear_ops import BranchSource, format_comment_context
+
+    src = BranchSource(repo="Comfy-Org/ComfyUI", branch="feat/new-thing")
+    out = format_comment_context("WIP", branch_source=src)
+    assert "**Context:**" in out
+    assert "[`feat/new-thing`](https://github.com/Comfy-Org/ComfyUI/tree/feat/new-thing)" in out
+    assert "(Comfy-Org/ComfyUI)" in out
+
+
+def test_format_comment_context_combines_pr_and_branch(monkeypatch):
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import (
+        BranchSource, GitHubPRSource, format_comment_context,
+    )
+
+    monkeypatch.setattr(
+        linear_ops.github_api, "fetch_pr",
+        lambda repo, n: {"title": "T"},
+    )
+    out = format_comment_context(
+        "msg",
+        pr_source=GitHubPRSource(repo="x/y", number=1),
+        branch_source=BranchSource(repo="x/y", branch="b"),
+    )
+    # Order: PR first, branch last
+    pr_idx = out.index("PR:")
+    br_idx = out.index("Branch:")
+    assert pr_idx < br_idx
+
+
+def test_format_comment_context_falls_back_when_pr_fetch_fails(monkeypatch):
+    """A network failure on PR fetch shouldn't blow up — title is just omitted."""
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import GitHubPRSource, format_comment_context
+
+    def boom(repo, n):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(linear_ops.github_api, "fetch_pr", boom)
+
+    out = format_comment_context(
+        "body", pr_source=GitHubPRSource(repo="x/y", number=1),
+    )
+    assert "[x/y#1](https://github.com/x/y/pull/1)" in out
+    # No " — " title separator added when title is empty
+    assert " — " not in out
+
+
+def test_format_comment_context_empty_body_returns_just_context(monkeypatch):
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import GitHubPRSource, format_comment_context
+
+    monkeypatch.setattr(
+        linear_ops.github_api, "fetch_pr",
+        lambda repo, n: {"title": "T"},
+    )
+    out = format_comment_context(
+        "", pr_source=GitHubPRSource(repo="x/y", number=1),
+    )
+    assert out.startswith("**Context:**")
+    assert "---" not in out  # no separator when body is empty

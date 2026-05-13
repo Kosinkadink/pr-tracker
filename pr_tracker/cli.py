@@ -466,14 +466,22 @@ def cmd_linear_move(args: argparse.Namespace) -> None:
 
 
 def cmd_linear_comment(args: argparse.Namespace) -> None:
-    """Post a comment on a Linear issue."""
-    from .linear_ops import comment_on_issue
+    """Post a comment on a Linear issue, optionally with PR/branch context."""
+    from .linear_ops import comment_on_issue, format_comment_context
 
+    sources = _build_sources(args)
+    body = format_comment_context(
+        args.body,
+        pr_source=sources.get("pr_source"),
+        issue_source=sources.get("issue_source"),
+        branch_source=sources.get("branch_source"),
+    )
     if args.dry_run:
-        comment_on_issue(args.identifier, args.body, dry_run=True)
-        console.print(f"[yellow]DRY RUN[/yellow] Would comment on {args.identifier}")
+        comment_on_issue(args.identifier, body, dry_run=True)
+        console.print(f"[yellow]DRY RUN[/yellow] Would comment on {args.identifier}:")
+        console.print(body)
         return
-    comment_on_issue(args.identifier, args.body)
+    comment_on_issue(args.identifier, body)
     console.print(f"[green]Commented[/green] on {args.identifier}")
 
 
@@ -890,6 +898,14 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_comment = linear_sub.add_parser("comment", help="Post a comment on a Linear issue")
     p_linear_comment.add_argument("identifier", help="Linear identifier (e.g. DESK2-42)")
     p_linear_comment.add_argument("body", help="Comment body")
+    p_linear_comment.add_argument("--from-pr", metavar="REF",
+                                  help="Append a context block linking a GitHub PR (e.g. owner/repo#123)")
+    p_linear_comment.add_argument("--from-issue", metavar="REF",
+                                  help="Append a context block linking a GitHub issue (e.g. owner/repo#123)")
+    p_linear_comment.add_argument("--from-branch", metavar="BRANCH",
+                                  help="Append a context block linking a branch (requires --repo)")
+    p_linear_comment.add_argument("--repo",
+                                  help="owner/repo (used with --from-branch)")
     p_linear_comment.add_argument("--dry-run", action="store_true")
     p_linear_comment.set_defaults(linear_action=cmd_linear_comment)
 
