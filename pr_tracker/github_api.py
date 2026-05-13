@@ -200,3 +200,51 @@ def fetch_branch_comparison(repo: str, base: str, head: str) -> dict:
 def fetch_rate_limit() -> dict:
     """Check current rate limit status."""
     return _fetch_json(f"{API}/rate_limit")
+
+
+# ---------------------------------------------------------------------------
+# Mutations (for Linear linkage)
+# ---------------------------------------------------------------------------
+
+def _mutate(method: str, path: str, json_body: dict) -> dict:
+    """POST/PATCH against the GitHub API. Skips the etag cache."""
+    url = f"{API}{path}"
+    try:
+        resp = req.request(
+            method.upper(),
+            url,
+            headers=_headers(),
+            json=json_body,
+            timeout=30,
+        )
+    except req.RequestException as e:
+        raise RuntimeError(f"GitHub mutation failed: {e}")
+    if resp.status_code >= 300:
+        raise RuntimeError(
+            f"GitHub {method} {path} returned HTTP {resp.status_code}: {resp.text[:200]}"
+        )
+    if not resp.text:
+        return {}
+    return resp.json()
+
+
+def update_issue_body(repo: str, number: int, body: str) -> dict:
+    """Replace an issue's (or PR's) body via the issues API.
+
+    GitHub treats PRs as a kind of issue for body edits.
+    """
+    return _mutate("PATCH", f"/repos/{repo}/issues/{number}", {"body": body})
+
+
+def update_pr_body(repo: str, number: int, body: str) -> dict:
+    """Replace a PR's body via the pulls API (idempotent)."""
+    return _mutate("PATCH", f"/repos/{repo}/pulls/{number}", {"body": body})
+
+
+def post_issue_comment(repo: str, number: int, body: str) -> dict:
+    """Post a comment on a GitHub issue or PR."""
+    return _mutate(
+        "POST",
+        f"/repos/{repo}/issues/{number}/comments",
+        {"body": body},
+    )

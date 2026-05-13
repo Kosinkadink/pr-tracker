@@ -6,6 +6,7 @@ Renders pre-enriched dicts from data.py — no GitHub API calls here.
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from rich.console import Console
@@ -17,7 +18,18 @@ try:
     _width = os.get_terminal_size().columns
 except (ValueError, OSError):
     _width = 160
-console = Console(width=max(_width, 140))
+
+# On Windows, force UTF-8 stdout so rich can render arrows / box drawing
+# without crashing on cp1252 (e.g. '\u2192').  legacy_windows=False routes
+# rendering through the modern terminal API, which respects UTF-8.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
+    console = Console(width=max(_width, 140), legacy_windows=False)
+else:
+    console = Console(width=max(_width, 140))
 
 
 # ---------------------------------------------------------------------------
