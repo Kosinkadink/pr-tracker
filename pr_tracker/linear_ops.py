@@ -221,6 +221,59 @@ class CreateResult:
     url: str
     issue: dict
     actions: list[str]
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def failed(self) -> bool:
+        return bool(self.errors)
+
+
+def _apply_source_side_effects(
+    src: Any,
+    *,
+    issue_id: str,
+    identifier: str,
+    issue_url: str,
+    inject_pr_body: bool,
+    back_comment: bool,
+    actions: list[str],
+    errors: list[str],
+) -> None:
+    """Run the per-source apply steps: attach, inject PR body, back-comment.
+
+    Each step records a human-readable line in *actions* and, on failure, also
+    appends a one-liner to *errors* so the caller can decide whether to surface
+    a non-zero exit code.
+    """
+    try:
+        linear_api.attach_url(issue_id, src.url, title=_attachment_title(src))
+        actions.append(f"Linear: attached {src.url}")
+    except Exception as e:
+        msg = f"Linear attach FAILED for {src.url}: {e}"
+        actions.append(msg)
+        errors.append(msg)
+
+    if isinstance(src, GitHubPRSource) and inject_pr_body:
+        try:
+            _ensure_pr_body_link(src, identifier)
+            actions.append(
+                f"GitHub: ensured 'Fixes {identifier}' in {src.repo}#{src.number}"
+            )
+        except Exception as e:
+            msg = f"GitHub PR body update FAILED for {src.repo}#{src.number}: {e}"
+            actions.append(msg)
+            errors.append(msg)
+
+    if isinstance(src, (GitHubPRSource, GitHubIssueSource)) and back_comment:
+        try:
+            github_api.post_issue_comment(
+                src.repo, src.number, build_back_comment(identifier, issue_url)
+            )
+            actions.append(f"GitHub: commented on {src.repo}#{src.number}")
+        except Exception as e:
+            msg = f"GitHub back-comment FAILED for {src.repo}#{src.number}: {e}"
+            actions.append(msg)
+            errors.append(msg)
 
 
 def create_with_sources(
@@ -281,34 +334,20 @@ def create_with_sources(
     identifier = issue.get("identifier", "?")
     url = issue.get("url", "")
 
+    errors: list[str] = []
     for src in payload.sources:
-        try:
-            linear_api.attach_url(issue["id"], src.url, title=_attachment_title(src))
-            actions.append(f"Linear: attached {src.url}")
-        except Exception as e:
-            actions.append(f"Linear attach FAILED for {src.url}: {e}")
+        _apply_source_side_effects(
+            src,
+            issue_id=issue["id"],
+            identifier=identifier,
+            issue_url=url,
+            inject_pr_body=inject_pr_body,
+            back_comment=back_comment,
+            actions=actions,
+            errors=errors,
+        )
 
-        if isinstance(src, GitHubPRSource) and inject_pr_body:
-            try:
-                _ensure_pr_body_link(src, identifier)
-                actions.append(f"GitHub: ensured 'Fixes {identifier}' in {src.repo}#{src.number}")
-            except Exception as e:
-                actions.append(
-                    f"GitHub PR body update FAILED for {src.repo}#{src.number}: {e}"
-                )
-
-        if isinstance(src, (GitHubPRSource, GitHubIssueSource)) and back_comment:
-            try:
-                github_api.post_issue_comment(
-                    src.repo, src.number, build_back_comment(identifier, url)
-                )
-                actions.append(f"GitHub: commented on {src.repo}#{src.number}")
-            except Exception as e:
-                actions.append(
-                    f"GitHub back-comment FAILED for {src.repo}#{src.number}: {e}"
-                )
-
-    return CreateResult(identifier, url, issue, actions)
+    return CreateResult(identifier, url, issue, actions, errors)
 
 
 def _attachment_title(src: Any) -> str:
@@ -340,6 +379,11 @@ def _ensure_pr_body_link(pr_source: GitHubPRSource, identifier: str) -> None:
 class LinkResult:
     identifier: str
     actions: list[str]
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def failed(self) -> bool:
+        return bool(self.errors)
 
 
 def link_source(
@@ -379,34 +423,20 @@ def link_source(
     issue_id = detail["id"]
     issue_url = detail.get("url", "")
 
+    errors: list[str] = []
     for src in sources:
-        try:
-            linear_api.attach_url(issue_id, src.url, title=_attachment_title(src))
-            actions.append(f"Linear: attached {src.url}")
-        except Exception as e:
-            actions.append(f"Linear attach FAILED for {src.url}: {e}")
+        _apply_source_side_effects(
+            src,
+            issue_id=issue_id,
+            identifier=identifier,
+            issue_url=issue_url,
+            inject_pr_body=inject_pr_body,
+            back_comment=back_comment,
+            actions=actions,
+            errors=errors,
+        )
 
-        if isinstance(src, GitHubPRSource) and inject_pr_body:
-            try:
-                _ensure_pr_body_link(src, identifier)
-                actions.append(f"GitHub: ensured 'Fixes {identifier}' in {src.repo}#{src.number}")
-            except Exception as e:
-                actions.append(
-                    f"GitHub PR body update FAILED for {src.repo}#{src.number}: {e}"
-                )
-
-        if isinstance(src, (GitHubPRSource, GitHubIssueSource)) and back_comment:
-            try:
-                github_api.post_issue_comment(
-                    src.repo, src.number, build_back_comment(identifier, issue_url)
-                )
-                actions.append(f"GitHub: commented on {src.repo}#{src.number}")
-            except Exception as e:
-                actions.append(
-                    f"GitHub back-comment FAILED for {src.repo}#{src.number}: {e}"
-                )
-
-    return LinkResult(identifier, actions)
+    return LinkResult(identifier, actions, errors)
 
 
 # ---------------------------------------------------------------------------

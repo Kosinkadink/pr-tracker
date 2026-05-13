@@ -222,9 +222,10 @@ _AUTO_INJECT_MARKER = "<!-- pr-tracker:linear-link -->"
 def pr_body_has_linear_link(body: str | None, identifier: str) -> bool:
     """True when *body* already contains a closing-keyword reference to *identifier*.
 
-    Matches things like "Fixes DESK2-42", "Closes desk2-42", or just a bare
-    identifier string anywhere (the bot doesn't require closing keywords for
-    attachment, but we want closing-keyword semantics so it auto-closes).
+    Matches things like "Fixes DESK2-42" or "Closes desk2-42".  Also accepts a
+    bare identifier — but only when it stands alone (i.e. not part of a longer
+    token like ``feat/DESK2-42-foo``), so branch references in the body don't
+    cause us to skip injection.
     """
     if not body:
         return False
@@ -232,21 +233,38 @@ def pr_body_has_linear_link(body: str | None, identifier: str) -> bool:
     for m in _LINEAR_FIXES_RE.finditer(body):
         if m.group(1).upper() == upper_id:
             return True
-    # Also accept a plain identifier on its own line (for legacy PRs).
-    plain_re = re.compile(rf"\b{re.escape(upper_id)}\b")
-    return bool(plain_re.search(body.upper()))
+    # Standalone identifier — disallow adjacent ``-`` / ``/`` / ``_`` / alphanumerics
+    # so things like "feat/DESK2-42-foo" or "DESK2-420" don't match DESK2-42.
+    standalone_re = re.compile(
+        rf"(?<![A-Za-z0-9/_-]){re.escape(upper_id)}(?![A-Za-z0-9_-])"
+    )
+    return bool(standalone_re.search(body.upper()))
 
 
 def inject_linear_link_into_body(body: str | None, identifier: str) -> str:
     """Return a new PR body with a ``Fixes DESK2-N`` line appended, idempotently.
 
-    No-ops if the identifier is already present.  Adds a marker so subsequent
-    edits can detect a previous auto-injection and avoid duplicate sections.
+    No-ops if the identifier is already present.  When the auto-inject marker
+    block already exists (from a previous identifier injection), the new
+    ``Fixes`` line is merged into that block instead of starting a new one.
     """
     upper_id = identifier.upper()
     body = body or ""
     if pr_body_has_linear_link(body, upper_id):
         return body
+
+    # Merge into an existing auto-inject block when present.
+    if _AUTO_INJECT_MARKER in body:
+        lines = body.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip() == _AUTO_INJECT_MARKER:
+                # Walk past consecutive closing-keyword lines belonging to the block.
+                j = i + 1
+                while j < len(lines) and _LINEAR_FIXES_RE.match(lines[j].strip()):
+                    j += 1
+                lines.insert(j, f"Fixes {upper_id}")
+                return "\n".join(lines)
+
     suffix = f"\n\n{_AUTO_INJECT_MARKER}\nFixes {upper_id}\n"
     return (body.rstrip() + suffix).lstrip("\n")
 

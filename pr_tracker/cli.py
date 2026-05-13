@@ -377,6 +377,11 @@ def cmd_linear_create(args: argparse.Namespace) -> None:
         f"[green]Created[/green] [bold]{result.identifier}[/bold]: {result.url}"
     )
     _print_actions("Actions:", result.actions)
+    if result.failed:
+        console.print(
+            f"[red]{len(result.errors)} step(s) failed after the Linear issue was created.[/red]"
+        )
+        sys.exit(1)
 
 
 def cmd_linear_link(args: argparse.Namespace) -> None:
@@ -421,6 +426,11 @@ def cmd_linear_link(args: argparse.Namespace) -> None:
     else:
         console.print(f"[green]Linked[/green] to {result.identifier}")
     _print_actions("Actions:", result.actions)
+    if not args.dry_run and result.failed:
+        console.print(
+            f"[red]{len(result.errors)} step(s) failed while linking {result.identifier}.[/red]"
+        )
+        sys.exit(1)
 
 
 def cmd_linear_move(args: argparse.Namespace) -> None:
@@ -494,6 +504,7 @@ def cmd_linear_backfill(args: argparse.Namespace) -> None:
         f"[bold]{len(candidates)} item(s) to backfill[/bold] in team {target.team_key}"
     )
 
+    total_errors = 0
     for kind, raw in candidates:
         n = raw["number"]
         title = raw.get("title", "")
@@ -516,9 +527,16 @@ def cmd_linear_backfill(args: argparse.Namespace) -> None:
         )
         if not args.dry_run:
             console.print(f"    → [green]{result.identifier}[/green] {result.url}")
+            if result.failed:
+                total_errors += len(result.errors)
+                for err in result.errors:
+                    console.print(f"      [red]{err}[/red]")
 
     if args.dry_run:
         console.print("[yellow]DRY RUN[/yellow] — re-run with --apply to perform.")
+    elif total_errors:
+        console.print(f"[red]{total_errors} step(s) failed across the backfill.[/red]")
+        sys.exit(1)
 
 
 def cmd_linear_sync(args: argparse.Namespace) -> None:
@@ -858,11 +876,11 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_backfill.add_argument("--no-pr-edit", action="store_true")
     p_linear_backfill.add_argument("--no-back-comment", action="store_true")
     backfill_mode = p_linear_backfill.add_mutually_exclusive_group()
-    backfill_mode.add_argument("--dry-run", action="store_true", default=True,
+    backfill_mode.add_argument("--dry-run", action="store_true",
                                help="Default: show what would happen without writing")
     backfill_mode.add_argument("--apply", dest="dry_run", action="store_false",
                                help="Actually create the Linear tickets")
-    p_linear_backfill.set_defaults(linear_action=cmd_linear_backfill)
+    p_linear_backfill.set_defaults(linear_action=cmd_linear_backfill, dry_run=True)
 
     p_linear_sync = linear_sub.add_parser(
         "sync",

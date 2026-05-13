@@ -46,3 +46,20 @@ class TTLCache:
             )
         except OSError:
             pass
+
+    def invalidate(self, key: str) -> None:
+        """Remove a single cached entry."""
+        try:
+            self._path(key).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def clear_all(self) -> None:
+        """Remove every entry in the cache directory."""
+        if not self._dir.exists():
+            return
+        for p in self._dir.glob("*.json"):
+            try:
+                p.unlink()
+            except OSError:
+                pass

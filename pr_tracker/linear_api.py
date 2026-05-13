@@ -23,6 +23,15 @@ def _headers() -> dict[str, str]:
     return h
 
 
+def invalidate_cache() -> None:
+    """Drop every cached Linear response.
+
+    Called after any mutation so back-to-back reads see fresh data
+    instead of being served stale entries from the 60s TTL cache.
+    """
+    _cache.clear_all()
+
+
 def _query(query: str, variables: dict | None = None, cache_key: str = "") -> dict:
     """Execute a GraphQL query against the Linear API.
 
@@ -355,6 +364,7 @@ def create_issue(
     payload = result.get("issueCreate") or {}
     if not payload.get("success"):
         raise RuntimeError("Linear issueCreate did not return success")
+    invalidate_cache()
     return payload.get("issue") or {}
 
 
@@ -398,6 +408,7 @@ def update_issue(issue_id: str, **fields: Any) -> dict:
     payload = result.get("issueUpdate") or {}
     if not payload.get("success"):
         raise RuntimeError("Linear issueUpdate did not return success")
+    invalidate_cache()
     return payload.get("issue") or {}
 
 
@@ -415,6 +426,7 @@ def create_comment(issue_id: str, body: str) -> dict:
     payload = result.get("commentCreate") or {}
     if not payload.get("success"):
         raise RuntimeError("Linear commentCreate did not return success")
+    invalidate_cache()
     return payload.get("comment") or {}
 
 
@@ -434,4 +446,5 @@ def attach_url(issue_id: str, url: str, title: str = "") -> dict:
     payload = result.get("attachmentLinkURL") or {}
     if not payload.get("success"):
         raise RuntimeError("Linear attachmentLinkURL did not return success")
+    invalidate_cache()
     return payload.get("attachment") or {}

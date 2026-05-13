@@ -80,6 +80,19 @@ def test_no_link_for_empty():
     assert not pr_body_has_linear_link("", "DESK2-42")
 
 
+def test_no_link_for_branch_name_substring():
+    # Branch reference in PR body must NOT count as a closing-keyword link,
+    # otherwise we skip injecting "Fixes DESK2-42" incorrectly.
+    body = "Pushed to feat/DESK2-42-add-thing for review."
+    assert not pr_body_has_linear_link(body, "DESK2-42")
+
+
+def test_no_link_for_longer_identifier_prefix():
+    # DESK2-420 must not satisfy a check for DESK2-42.
+    body = "Tracked alongside DESK2-420."
+    assert not pr_body_has_linear_link(body, "DESK2-42")
+
+
 # ---------------------------------------------------------------------------
 # inject_linear_link_into_body
 # ---------------------------------------------------------------------------
@@ -104,6 +117,25 @@ def test_inject_into_empty_body():
 def test_inject_normalizes_identifier_case():
     out = inject_linear_link_into_body("Body.", "desk2-42")
     assert "Fixes DESK2-42" in out
+
+
+def test_inject_multiple_identifiers_share_one_block():
+    out1 = inject_linear_link_into_body("Body.", "DESK2-42")
+    out2 = inject_linear_link_into_body(out1, "DESK2-43")
+    # Only one auto-inject marker should ever appear, even after multiple
+    # identifiers have been linked to the same PR.
+    assert out2.count("<!-- pr-tracker:linear-link -->") == 1
+    assert "Fixes DESK2-42" in out2
+    assert "Fixes DESK2-43" in out2
+
+
+def test_inject_skipped_when_branch_substring_in_body():
+    # A branch reference like "feat/DESK2-42-foo" used to be treated as an
+    # existing link and skip injection. We must still inject "Fixes DESK2-42".
+    body = "See branch feat/DESK2-42-add-thing."
+    out = inject_linear_link_into_body(body, "DESK2-42")
+    assert "Fixes DESK2-42" in out
+    assert body in out
 
 
 # ---------------------------------------------------------------------------
