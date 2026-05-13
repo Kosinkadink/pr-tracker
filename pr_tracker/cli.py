@@ -324,11 +324,16 @@ def _print_actions(label: str, actions: list[str]) -> None:
 
 
 def _build_sources(args: argparse.Namespace) -> dict:
-    """Translate --from-issue / --from-pr / --from-branch / --repo into source objects."""
+    """Translate --from-issue / --from-pr / --from-branch / --from-commit / --repo into source objects."""
     from .data import parse_ref
-    from .linear_ops import BranchSource, GitHubIssueSource, GitHubPRSource
+    from .linear_ops import BranchSource, CommitSource, GitHubIssueSource, GitHubPRSource
 
-    sources: dict = {"issue_source": None, "pr_source": None, "branch_source": None}
+    sources: dict = {
+        "issue_source": None,
+        "pr_source": None,
+        "branch_source": None,
+        "commit_source": None,
+    }
 
     if getattr(args, "from_issue", None):
         repo, n = parse_ref(args.from_issue)
@@ -341,6 +346,11 @@ def _build_sources(args: argparse.Namespace) -> dict:
         if not repo:
             raise SystemExit("--from-branch requires --repo owner/repo")
         sources["branch_source"] = BranchSource(repo=repo, branch=args.from_branch)
+    if getattr(args, "from_commit", None):
+        repo = getattr(args, "repo", None)
+        if not repo:
+            raise SystemExit("--from-commit requires --repo owner/repo")
+        sources["commit_source"] = CommitSource(repo=repo, sha=args.from_commit)
     return sources
 
 
@@ -348,7 +358,12 @@ def _team_from_sources(sources: dict) -> str | None:
     """Return the configured Linear team for the first source's repo, if any."""
     from .config import linear_team_for_repo
 
-    for src in (sources.get("pr_source"), sources.get("issue_source"), sources.get("branch_source")):
+    for src in (
+        sources.get("pr_source"),
+        sources.get("issue_source"),
+        sources.get("branch_source"),
+        sources.get("commit_source"),
+    ):
         if src is None:
             continue
         team = linear_team_for_repo(getattr(src, "repo", None))
@@ -904,7 +919,9 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_create.add_argument("--from-issue", metavar="REF", help="Mirror a GitHub issue (e.g. owner/repo#123)")
     p_linear_create.add_argument("--from-pr", metavar="REF", help="Track a GitHub PR (e.g. owner/repo#123)")
     p_linear_create.add_argument("--from-branch", metavar="BRANCH", help="Track a branch (requires --repo)")
-    p_linear_create.add_argument("--repo", help="owner/repo (used with --from-branch)")
+    p_linear_create.add_argument("--from-commit", metavar="SHA",
+                                 help="Mint a follow-up ticket from a shipped commit (requires --repo)")
+    p_linear_create.add_argument("--repo", help="owner/repo (used with --from-branch / --from-commit)")
     p_linear_create.add_argument("--rename-branch", action="store_true",
         help="Rename the source branch to include the new identifier (requires --from-branch)")
     p_linear_create.add_argument("--no-pr-edit", action="store_true",

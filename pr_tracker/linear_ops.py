@@ -77,6 +77,26 @@ class BranchSource:
         return f"https://github.com/{self.repo}/tree/{self.branch}"
 
 
+@dataclass
+class CommitSource:
+    repo: str
+    sha: str
+    fetched: dict | None = None
+
+    @property
+    def url(self) -> str:
+        return f"https://github.com/{self.repo}/commit/{self.sha}"
+
+    @property
+    def short_sha(self) -> str:
+        return self.sha[:7]
+
+    def fetch(self) -> dict:
+        if self.fetched is None:
+            self.fetched = github_api.fetch_commit(self.repo, self.sha)
+        return self.fetched
+
+
 # ---------------------------------------------------------------------------
 # Team / state / assignee resolution
 # ---------------------------------------------------------------------------
@@ -159,6 +179,7 @@ def compose_payload(
     issue_source: GitHubIssueSource | None = None,
     pr_source: GitHubPRSource | None = None,
     branch_source: BranchSource | None = None,
+    commit_source: CommitSource | None = None,
 ) -> IssuePayload:
     """Build an issue title + body from any combination of sources + overrides."""
     payload = IssuePayload()
@@ -195,6 +216,22 @@ def compose_payload(
         if not payload.title and not title_override:
             payload.title = f"Branch: {branch_source.branch}"
         payload.add_source(branch_source)
+
+    if commit_source is not None:
+        data = commit_source.fetch()
+        message = (data.get("commit") or {}).get("message", "") or ""
+        subject, _, rest = message.partition("\n")
+        subject = subject.strip()
+        rest = rest.strip()
+        if not payload.title and not title_override:
+            payload.title = subject or f"Follow-up to {commit_source.short_sha}"
+        body_chunks.append(
+            f"Follow-up to commit [`{commit_source.short_sha}`]({commit_source.url}) "
+            f"in `{commit_source.repo}`."
+        )
+        if rest:
+            body_chunks.append("---\n\n" + rest)
+        payload.add_source(commit_source)
 
     if title_override:
         payload.title = title_override
@@ -400,6 +437,8 @@ def _attachment_title(src: Any) -> str:
         return f"GitHub PR {src.repo}#{src.number}"
     if isinstance(src, BranchSource):
         return f"Branch {src.repo}@{src.branch}"
+    if isinstance(src, CommitSource):
+        return f"Commit {src.repo}@{src.short_sha}"
     return "External link"
 
 

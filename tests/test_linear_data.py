@@ -789,3 +789,64 @@ def test_create_with_sources_dry_run_includes_branch_rename_action(monkeypatch):
         target=target, payload=payload, rename_branch=True, dry_run=True,
     )
     assert any("rename branch" in a and "DESK2-?" in a for a in result.actions)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 follow-up: --from-commit
+# ---------------------------------------------------------------------------
+
+def test_compose_payload_from_commit_uses_subject_as_title(monkeypatch):
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import CommitSource, compose_payload
+
+    monkeypatch.setattr(
+        linear_ops.github_api, "fetch_commit",
+        lambda repo, sha: {
+            "commit": {
+                "message": "Fix the thing\n\nThis paragraph explains the fix.\n",
+            },
+        },
+    )
+    src = CommitSource(repo="Comfy-Org/x", sha="abcdef0123456789")
+    payload = compose_payload(commit_source=src)
+    assert payload.title == "Fix the thing"
+    assert "Follow-up to commit [`abcdef0`]" in payload.body
+    assert "/commit/abcdef0123456789" in payload.body
+    assert "This paragraph explains the fix." in payload.body
+    assert payload.sources == [src]
+
+
+def test_compose_payload_from_commit_falls_back_to_short_sha(monkeypatch):
+    """A commit with no message → title is 'Follow-up to <short_sha>'."""
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import CommitSource, compose_payload
+
+    monkeypatch.setattr(
+        linear_ops.github_api, "fetch_commit",
+        lambda repo, sha: {"commit": {"message": ""}},
+    )
+    src = CommitSource(repo="x/y", sha="0123456789abcdef")
+    payload = compose_payload(commit_source=src)
+    assert payload.title == "Follow-up to 0123456"
+
+
+def test_compose_payload_commit_title_override_wins(monkeypatch):
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import CommitSource, compose_payload
+
+    monkeypatch.setattr(
+        linear_ops.github_api, "fetch_commit",
+        lambda repo, sha: {"commit": {"message": "Auto title"}},
+    )
+    payload = compose_payload(
+        title_override="My title",
+        commit_source=CommitSource(repo="x/y", sha="abc1234"),
+    )
+    assert payload.title == "My title"
+
+
+def test_attachment_title_for_commit():
+    from pr_tracker.linear_ops import CommitSource, _attachment_title
+
+    src = CommitSource(repo="x/y", sha="abcdef0123456789")
+    assert _attachment_title(src) == "Commit x/y@abcdef0"

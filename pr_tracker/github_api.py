@@ -197,6 +197,11 @@ def fetch_branch_comparison(repo: str, base: str, head: str) -> dict:
     return _fetch_json(f"{API}/repos/{repo}/compare/{base}...{head}")
 
 
+def fetch_commit(repo: str, sha: str) -> dict:
+    """Fetch a single commit by SHA."""
+    return _fetch_json(f"{API}/repos/{repo}/commits/{sha}")
+
+
 def fetch_rate_limit() -> dict:
     """Check current rate limit status."""
     return _fetch_json(f"{API}/rate_limit")
