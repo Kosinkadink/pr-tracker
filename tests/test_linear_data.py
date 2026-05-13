@@ -681,3 +681,111 @@ def test_format_comment_context_empty_body_returns_just_context(monkeypatch):
     )
     assert out.startswith("**Context:**")
     assert "---" not in out  # no separator when body is empty
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 follow-up: --rename-branch / --rename
+# ---------------------------------------------------------------------------
+
+def test_branch_rename_target_appends_identifier():
+    from pr_tracker.linear_ops import _branch_rename_target
+
+    assert _branch_rename_target("feat/new-thing", "DESK2-42") == "feat/new-thing-DESK2-42"
+
+
+def test_branch_rename_target_is_idempotent():
+    from pr_tracker.linear_ops import _branch_rename_target
+
+    # Identifier already in branch name → no change
+    assert _branch_rename_target("feat/x-DESK2-42", "DESK2-42") == "feat/x-DESK2-42"
+    # Case-insensitive match
+    assert _branch_rename_target("feat/x-desk2-42", "DESK2-42") == "feat/x-desk2-42"
+
+
+def test_branch_rename_target_empty_identifier():
+    from pr_tracker.linear_ops import _branch_rename_target
+
+    assert _branch_rename_target("feat/x", "") == "feat/x"
+
+
+def test_apply_side_effects_renames_branch_and_mutates_source(monkeypatch):
+    """``rename_branch=True`` on a BranchSource renames before attach and
+    updates ``src.branch`` so the attach URL points at the new name."""
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import BranchSource, _apply_source_side_effects
+
+    rename_calls: list[tuple] = []
+    attach_calls: list[tuple] = []
+    monkeypatch.setattr(
+        linear_ops.github_api, "rename_branch",
+        lambda repo, old, new: rename_calls.append((repo, old, new)) or {"name": new},
+    )
+    monkeypatch.setattr(
+        linear_ops.linear_api, "attach_url",
+        lambda issue_id, url, title: attach_calls.append((issue_id, url, title)) or {},
+    )
+
+    src = BranchSource(repo="Comfy-Org/x", branch="feat/foo")
+    actions: list[str] = []
+    errors: list[str] = []
+    _apply_source_side_effects(
+        src,
+        issue_id="ID1",
+        identifier="DESK2-42",
+        issue_url="https://linear.app/x",
+        inject_pr_body=False,
+        back_comment=False,
+        actions=actions,
+        errors=errors,
+        rename_branch=True,
+    )
+
+    assert rename_calls == [("Comfy-Org/x", "feat/foo", "feat/foo-DESK2-42")]
+    assert src.branch == "feat/foo-DESK2-42"
+    assert attach_calls and attach_calls[0][1].endswith("/tree/feat/foo-DESK2-42")
+    assert errors == []
+    assert any("renamed branch" in a for a in actions)
+
+
+def test_apply_side_effects_skips_rename_when_already_present(monkeypatch):
+    """No-op when the identifier is already in the branch name."""
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import BranchSource, _apply_source_side_effects
+
+    rename_calls: list = []
+    monkeypatch.setattr(
+        linear_ops.github_api, "rename_branch",
+        lambda repo, old, new: rename_calls.append((repo, old, new)),
+    )
+    monkeypatch.setattr(
+        linear_ops.linear_api, "attach_url",
+        lambda issue_id, url, title: {},
+    )
+
+    src = BranchSource(repo="x/y", branch="feat/x-DESK2-42")
+    _apply_source_side_effects(
+        src,
+        issue_id="ID1", identifier="DESK2-42", issue_url="",
+        inject_pr_body=False, back_comment=False,
+        actions=[], errors=[], rename_branch=True,
+    )
+    assert rename_calls == []
+    assert src.branch == "feat/x-DESK2-42"
+
+
+def test_create_with_sources_dry_run_includes_branch_rename_action(monkeypatch):
+    """Dry-run output for --rename-branch should mention the rename step."""
+    from pr_tracker.linear_ops import (
+        BranchSource, IssuePayload, ResolvedTarget, create_with_sources,
+    )
+
+    target = ResolvedTarget(team_id="T", team_key="DESK2", team_name="Desktop")
+    payload = IssuePayload(
+        title="Foo",
+        body="",
+        sources=[BranchSource(repo="x/y", branch="feat/foo")],
+    )
+    result = create_with_sources(
+        target=target, payload=payload, rename_branch=True, dry_run=True,
+    )
+    assert any("rename branch" in a and "DESK2-?" in a for a in result.actions)

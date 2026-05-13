@@ -238,13 +238,33 @@ def _apply_source_side_effects(
     back_comment: bool,
     actions: list[str],
     errors: list[str],
+    rename_branch: bool = False,
 ) -> None:
     """Run the per-source apply steps: attach, inject PR body, back-comment.
+
+    For ``BranchSource`` with ``rename_branch=True``, the branch is renamed to
+    include the Linear identifier *before* the attach step so the attachment
+    URL points at the new name.  ``src.branch`` is mutated in place to the
+    new name on success.
 
     Each step records a human-readable line in *actions* and, on failure, also
     appends a one-liner to *errors* so the caller can decide whether to surface
     a non-zero exit code.
     """
+    if isinstance(src, BranchSource) and rename_branch:
+        new_name = _branch_rename_target(src.branch, identifier)
+        if new_name and new_name != src.branch:
+            try:
+                github_api.rename_branch(src.repo, src.branch, new_name)
+                actions.append(
+                    f"GitHub: renamed branch {src.repo}@{src.branch} → {new_name}"
+                )
+                src.branch = new_name
+            except Exception as e:
+                msg = f"GitHub branch rename FAILED for {src.repo}@{src.branch}: {e}"
+                actions.append(msg)
+                errors.append(msg)
+
     try:
         linear_api.attach_url(issue_id, src.url, title=_attachment_title(src))
         actions.append(f"Linear: attached {src.url}")
@@ -276,6 +296,19 @@ def _apply_source_side_effects(
             errors.append(msg)
 
 
+def _branch_rename_target(branch: str, identifier: str) -> str:
+    """Return the new branch name with *identifier* appended.
+
+    Idempotent — returns *branch* unchanged when *identifier* (case-insensitive)
+    is already present in the name.
+    """
+    if not identifier:
+        return branch
+    if identifier.lower() in branch.lower():
+        return branch
+    return f"{branch}-{identifier}"
+
+
 def create_with_sources(
     *,
     target: ResolvedTarget,
@@ -283,16 +316,19 @@ def create_with_sources(
     priority: str | int | None = None,
     inject_pr_body: bool = True,
     back_comment: bool = True,
+    rename_branch: bool = False,
     dry_run: bool = False,
 ) -> CreateResult:
     """End-to-end create flow.
 
     Steps:
       1. ``issueCreate`` (skipped if dry_run).
-      2. For each source, attach via ``attachmentLinkURL``.
-      3. For PR sources, edit PR body to inject ``Fixes DESK2-N``
+      2. For BranchSource with ``rename_branch=True``, rename the branch to
+         include the new identifier *before* attaching.
+      3. For each source, attach via ``attachmentLinkURL``.
+      4. For PR sources, edit PR body to inject ``Fixes DESK2-N``
          (skipped when ``inject_pr_body=False``).
-      4. For PR/issue sources, post a back-comment on GitHub
+      5. For PR/issue sources, post a back-comment on GitHub
          (skipped when ``back_comment=False``).
 
     In dry_run mode, returns a fake identifier / url and the actions
@@ -312,6 +348,12 @@ def create_with_sources(
         placeholder_id = f"{target.team_key}-?"
         placeholder_url = f"https://linear.app/<team>/issue/{placeholder_id}"
         for src in payload.sources:
+            if isinstance(src, BranchSource) and rename_branch:
+                new_name = _branch_rename_target(src.branch, placeholder_id)
+                if new_name != src.branch:
+                    actions.append(
+                        f"GitHub: rename branch {src.repo}@{src.branch} → {new_name}"
+                    )
             actions.append(f"Linear: attach {src.url}")
             if isinstance(src, GitHubPRSource) and inject_pr_body:
                 actions.append(
@@ -345,6 +387,7 @@ def create_with_sources(
             back_comment=back_comment,
             actions=actions,
             errors=errors,
+            rename_branch=rename_branch,
         )
 
     return CreateResult(identifier, url, issue, actions, errors)
@@ -394,9 +437,13 @@ def link_source(
     branch_source: BranchSource | None = None,
     inject_pr_body: bool = True,
     back_comment: bool = False,
+    rename_branch: bool = False,
     dry_run: bool = False,
 ) -> LinkResult:
     """Attach an existing Linear issue to a GitHub PR / issue / branch.
+
+    With ``rename_branch=True`` and a ``branch_source``, the branch is renamed
+    to include *identifier* before attaching (idempotent).
 
     Returns the actions performed (or that would be performed in dry-run).
     """
@@ -408,6 +455,12 @@ def link_source(
 
     if dry_run:
         for src in sources:
+            if isinstance(src, BranchSource) and rename_branch:
+                new_name = _branch_rename_target(src.branch, identifier)
+                if new_name != src.branch:
+                    actions.append(
+                        f"GitHub: rename branch {src.repo}@{src.branch} → {new_name}"
+                    )
             actions.append(f"Linear: attach {src.url} to {identifier}")
             if isinstance(src, GitHubPRSource) and inject_pr_body:
                 actions.append(
@@ -434,6 +487,7 @@ def link_source(
             back_comment=back_comment,
             actions=actions,
             errors=errors,
+            rename_branch=rename_branch,
         )
 
     return LinkResult(identifier, actions, errors)

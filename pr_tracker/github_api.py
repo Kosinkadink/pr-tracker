@@ -248,3 +248,17 @@ def post_issue_comment(repo: str, number: int, body: str) -> dict:
         f"/repos/{repo}/issues/{number}/comments",
         {"body": body},
     )
+
+
+def rename_branch(repo: str, old: str, new: str) -> dict:
+    """Rename a branch via the GitHub branch-rename API.
+
+    Returns the updated branch object.  Open PRs whose head is the old branch
+    are automatically retargeted by GitHub.
+    """
+    from urllib.parse import quote
+    return _mutate(
+        "POST",
+        f"/repos/{repo}/branches/{quote(old, safe='')}/rename",
+        {"new_name": new},
+    )

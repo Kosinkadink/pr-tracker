@@ -381,6 +381,7 @@ def cmd_linear_create(args: argparse.Namespace) -> None:
         priority=args.priority,
         inject_pr_body=not args.no_pr_edit,
         back_comment=not args.no_back_comment,
+        rename_branch=getattr(args, "rename_branch", False),
         dry_run=args.dry_run,
     )
 
@@ -434,6 +435,7 @@ def cmd_linear_link(args: argparse.Namespace) -> None:
         branch_source=branch_source,
         inject_pr_body=not args.no_pr_edit,
         back_comment=args.back_comment,
+        rename_branch=getattr(args, "rename", False),
         dry_run=args.dry_run,
     )
 
@@ -903,6 +905,8 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_create.add_argument("--from-pr", metavar="REF", help="Track a GitHub PR (e.g. owner/repo#123)")
     p_linear_create.add_argument("--from-branch", metavar="BRANCH", help="Track a branch (requires --repo)")
     p_linear_create.add_argument("--repo", help="owner/repo (used with --from-branch)")
+    p_linear_create.add_argument("--rename-branch", action="store_true",
+        help="Rename the source branch to include the new identifier (requires --from-branch)")
     p_linear_create.add_argument("--no-pr-edit", action="store_true",
                                  help="Skip injecting 'Fixes DESK2-N' into the PR body")
     p_linear_create.add_argument("--no-back-comment", action="store_true",
@@ -918,6 +922,8 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_link.add_argument("target", nargs="?", help="GitHub ref (e.g. owner/repo#123)")
     p_linear_link.add_argument("--branch", help="Branch name to attach (requires --repo)")
     p_linear_link.add_argument("--repo", help="owner/repo (used with --branch)")
+    p_linear_link.add_argument("--rename", action="store_true",
+        help="Rename --branch to include the Linear identifier (idempotent)")
     p_linear_link.add_argument("--no-pr-edit", action="store_true",
                                help="Skip injecting 'Fixes DESK2-N' into the PR body")
     p_linear_link.add_argument("--back-comment", action="store_true",
