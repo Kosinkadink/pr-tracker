@@ -37,6 +37,9 @@ _PR_CACHE_FIELDS = [
     "number", "title", "repo", "author", "state_label", "head_sha",
     "base_ref", "head_ref", "label_names", "updated_ago", "created_ago", "tags", "url",
     "body",
+    # Linear linkage / state pill fields
+    "linear_identifier", "linear_state_name", "linear_state_type",
+    "linear_state_color", "linear_assignee", "linear_url", "linear_title",
 ]
 
 _ISSUE_CACHE_FIELDS = [
@@ -401,6 +404,11 @@ def enrich_pr(pr: dict, repo: str, *, fast: bool = False) -> dict[str, Any]:
     else:
         state_label = "open"
 
+    # Cheap Linear linkage — extract DESK2-N (or other team prefix) from branch
+    # name. State info is filled in later by ``apply_linear_states``.
+    from .linear_data import extract_linear_identifier
+    linear_identifier = extract_linear_identifier(head_ref) or ""
+
     enriched: dict[str, Any] = {
         **pr,
         "repo": repo,
@@ -414,6 +422,7 @@ def enrich_pr(pr: dict, repo: str, *, fast: bool = False) -> dict[str, Any]:
         "created_ago": time_ago(pr.get("created_at")),
         "tags": all_tags.get(key, []),
         "url": f"https://github.com/{repo}/pull/{number}",
+        "linear_identifier": linear_identifier,
     }
 
     # Enrichment: CI, behind, replies (best-effort, skip on error)
@@ -463,6 +472,86 @@ def enrich_pr(pr: dict, repo: str, *, fast: bool = False) -> dict[str, Any]:
     enriched["check_run_count"] = len(enriched["check_runs"])
 
     return enriched
+
+
+# ---------------------------------------------------------------------------
+# Linear state pill enrichment (bulk, after PR enrichment)
+# ---------------------------------------------------------------------------
+
+# Linear state types considered "active" for the --linear-state active filter
+_LINEAR_ACTIVE_TYPES = {"started", "unstarted"}
+
+
+def apply_linear_states(prs: list[dict[str, Any]]) -> None:
+    """Look up the current Linear state for each PR with a ``linear_identifier``
+    and write ``linear_state_*`` / ``linear_url`` / ``linear_assignee`` fields
+    onto the PR dict in place.
+
+    Cheap no-op if the Linear token isn't configured or no PRs have a linkage.
+    Failures are silently ignored — callers should treat absence as unknown.
+    """
+    from .config import load_linear_token
+    from .linear_data import fetch_linear_states_for_identifiers
+
+    if not load_linear_token():
+        return
+    identifiers = [
+        pr["linear_identifier"]
+        for pr in prs
+        if pr.get("linear_identifier")
+    ]
+    if not identifiers:
+        return
+    lookup = fetch_linear_states_for_identifiers(identifiers)
+    if not lookup:
+        return
+    for pr in prs:
+        ident = pr.get("linear_identifier", "")
+        info = lookup.get(ident.upper()) if ident else None
+        if not info:
+            continue
+        pr["linear_state_name"] = info.get("state_name", "")
+        pr["linear_state_type"] = info.get("state_type", "")
+        pr["linear_state_color"] = info.get("state_color", "")
+        pr["linear_assignee"] = info.get("assignee", "")
+        pr["linear_url"] = info.get("url", "")
+        pr["linear_title"] = info.get("title", "")
+
+
+def filter_prs_by_linear(
+    prs: list[dict[str, Any]],
+    *,
+    linear_state: str | None = None,
+    no_linear: bool = False,
+) -> list[dict[str, Any]]:
+    """Apply Linear-related filters to an enriched PR list.
+
+    *linear_state* values: ``active`` (started/unstarted), ``done``,
+    ``backlog``, ``cancelled``, or any Linear state ``type`` directly.
+    Entries without Linear state info are dropped when *linear_state* is set.
+
+    *no_linear* keeps only PRs missing a ``linear_identifier``.
+    """
+    out = prs
+    if no_linear:
+        out = [p for p in out if not p.get("linear_identifier")]
+    if linear_state:
+        target = linear_state.lower().strip()
+        if target == "active":
+            allowed = _LINEAR_ACTIVE_TYPES
+        elif target in {"done", "completed"}:
+            allowed = {"completed"}
+        elif target in {"cancelled", "canceled"}:
+            allowed = {"cancelled"}
+        elif target == "backlog":
+            allowed = {"backlog"}
+        else:
+            allowed = {target}
+        out = [
+            p for p in out
+            if (p.get("linear_state_type") or "").lower() in allowed
+        ]
+    return out
 
 
 def enrich_single_pr(pr: dict) -> dict[str, Any]:
@@ -576,6 +665,8 @@ def fetch_pr_list(
     tag: str | None = None,
     stale_days: int | None = None,
     fast: bool = False,
+    linear_state: str | None = None,
+    no_linear: bool = False,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> list[dict[str, list[dict[str, Any]]]]:
     """Fetch PRs from tracked repos, enriched and filtered.
@@ -643,6 +734,19 @@ def fetch_pr_list(
             enriched.append(ep)
             done += 1
         results.append({"repo": r, "prs": enriched})
+
+    # Bulk-fetch Linear states for every PR with a linkage (single API call).
+    all_prs = [p for grp in results for p in grp.get("prs", [])]
+    apply_linear_states(all_prs)
+
+    # Apply Linear filters per group
+    if linear_state or no_linear:
+        for grp in results:
+            grp["prs"] = filter_prs_by_linear(
+                grp.get("prs", []),
+                linear_state=linear_state,
+                no_linear=no_linear,
+            )
 
     if on_progress:
         on_progress(total, total, "done")

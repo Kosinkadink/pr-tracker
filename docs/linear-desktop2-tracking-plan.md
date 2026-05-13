@@ -111,12 +111,12 @@ All commands live under `pr_tracker linear`. All `--from-*` flags are **optional
 
 In the existing `pr_tracker` default view and TUI:
 
-- For each open PR, run `extract_linear_identifier(branch_name)`. If a `DESK2-N` is found, fetch the cached Linear issue and render the state + assignee inline (small `DESK2-42 · In Review` pill).
-- New filters:
+- For each open PR, run `extract_linear_identifier(branch_name)`. If a `DESK2-N` is found, fetch the cached Linear issue and render the state + assignee inline (small `DESK2-42 · In Review` pill). ✅ Implemented in `data.apply_linear_states` + `display._linear_pill_text`; both the CLI table and TUI `Linear` column show the pill.
+- New filters: ✅
   - `pr_tracker --linear-state active` — PRs whose Linear ticket is started/unstarted
   - `pr_tracker --no-linear` — PRs missing a `DESK2-N` linkage (candidates for `linear create --from-pr`)
-- TUI: a key (e.g. `L`) on a PR row jumps to the existing `LinearIssueDetailScreen` for the linked ticket.
-- **Mismatch warnings** rendered inline:
+- TUI: a key (e.g. `L`) on a PR row jumps to the existing `LinearIssueDetailScreen` for the linked ticket. ✅ `L` is now context-aware — falls back to the team list when the row has no linkage.
+- **Mismatch warnings** rendered inline (deferred — needs cross-checking PR attachments which is a follow-up):
   - PR has Linear attachment but no `DESK2-N` in branch/title/body → ⚠ "auto-close will miss this; run `linear link --no-pr-edit` was used or fix manually".
   - PR is merged but Linear ticket still "In Progress"/"In Review" → ⚠ "bot didn't fire; run `linear sync` or transition manually".
 

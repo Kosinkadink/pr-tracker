@@ -82,6 +82,34 @@ def _state_text(state_label: str) -> Text:
     return Text("open", style="green")
 
 
+# Map Linear state types to a Rich style for the pill cell
+_LINEAR_PILL_STYLES = {
+    "started": "yellow",
+    "unstarted": "blue",
+    "backlog": "dim",
+    "completed": "green",
+    "cancelled": "red",
+}
+
+
+def _linear_pill_text(pr: dict[str, Any]) -> Text:
+    """Render a small ``DESK2-42 · In Review`` pill for a PR row.
+
+    Returns a dim ``-`` when the PR has no Linear linkage and an annotated
+    identifier (no state) when the linkage is known but the state hasn't been
+    fetched (e.g. Linear API offline).
+    """
+    ident = pr.get("linear_identifier") or ""
+    if not ident:
+        return Text("-", style="dim")
+    state_name = pr.get("linear_state_name") or ""
+    state_type = pr.get("linear_state_type") or ""
+    style = _LINEAR_PILL_STYLES.get(state_type, "white")
+    if state_name:
+        return Text(f"{ident} · {state_name}", style=style)
+    return Text(ident, style="dim")
+
+
 # ---------------------------------------------------------------------------
 # Table renderers
 # ---------------------------------------------------------------------------
@@ -99,10 +127,11 @@ def render_pr_table(
 
     table = Table(title=f"{title} - {repo}", show_lines=False, pad_edge=False, min_width=140)
     table.add_column("#", style="bold", width=6, justify="right")
-    table.add_column("Title", width=45, no_wrap=True, overflow="ellipsis")
-    table.add_column("Author", style="blue", width=20, no_wrap=True)
+    table.add_column("Title", width=40, no_wrap=True, overflow="ellipsis")
+    table.add_column("Author", style="blue", width=18, no_wrap=True)
     table.add_column("State", width=7)
-    table.add_column("Labels", width=16, no_wrap=True, overflow="ellipsis")
+    table.add_column("Linear", width=24, no_wrap=True, overflow="ellipsis")
+    table.add_column("Labels", width=14, no_wrap=True, overflow="ellipsis")
     table.add_column("CI", width=10)
     table.add_column("Behind", width=10)
     table.add_column("Commit", width=7, justify="right")
@@ -115,11 +144,18 @@ def render_pr_table(
         number_link = Text(str(number), style=f"bold link {pr_url}")
         title_link = Text(pr.get("title", ""), style=f"link {pr_url}")
 
+        # Make the Linear pill clickable when we know its URL
+        linear_cell = _linear_pill_text(pr)
+        linear_url = pr.get("linear_url") or ""
+        if linear_url:
+            linear_cell.stylize(f"link {linear_url}")
+
         table.add_row(
             number_link,
             title_link,
             pr.get("author", "?"),
             _state_text(pr.get("state_label", "open")),
+            linear_cell,
             _label_text(pr.get("label_names", [])),
             _ci_text(pr.get("ci", {})),
             _behind_text(pr.get("behind", {})),

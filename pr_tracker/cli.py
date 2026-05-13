@@ -40,6 +40,8 @@ def cmd_list(args: argparse.Namespace) -> None:
         tag=args.tag,
         stale_days=args.stale,
         fast=args.fast,
+        linear_state=getattr(args, "linear_state", None),
+        no_linear=getattr(args, "no_linear", False),
     )
 
     for group in results:
@@ -744,6 +746,17 @@ def main(argv: list[str] | None = None) -> None:
     p_list.add_argument("--stale", type=int, metavar="DAYS", help="Only show PRs with no activity in N+ days")
     p_list.add_argument("--closed", action="store_true", help="Show closed/merged PRs instead of open")
     p_list.add_argument("--fast", "-f", action="store_true", help="Skip CI and behind-base checks (faster)")
+    p_list.add_argument(
+        "--linear-state",
+        metavar="STATE",
+        help="Filter to PRs whose Linear ticket is in this state "
+             "(active|done|cancelled|backlog|<state-type>)",
+    )
+    p_list.add_argument(
+        "--no-linear",
+        action="store_true",
+        help="Only show PRs without a Linear identifier (candidates for `linear create --from-pr`)",
+    )
     p_list.set_defaults(func=cmd_list)
 
     # Show a specific PR/issue

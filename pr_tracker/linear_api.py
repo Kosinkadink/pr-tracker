@@ -187,6 +187,61 @@ def fetch_team_issues(
     return result.get("issues", {}).get("nodes", [])
 
 
+def fetch_issues_by_identifiers(identifiers: list[str]) -> list[dict]:
+    """Fetch multiple issues by identifier in a single batched query.
+
+    Identifiers are grouped by team key so we can use ``number: { in: [...] }``
+    per team and ``or`` across teams.  Order of returned issues is undefined.
+
+    Returns an empty list when *identifiers* is empty or no token is configured.
+    """
+    import re
+    if not identifiers:
+        return []
+
+    groups: dict[str, list[int]] = {}
+    for ident in identifiers:
+        m = re.match(r"^([A-Za-z][A-Za-z0-9]*)-(\d+)$", ident.strip())
+        if not m:
+            continue
+        team_key = m.group(1).upper()
+        number = int(m.group(2))
+        groups.setdefault(team_key, []).append(number)
+
+    if not groups:
+        return []
+
+    or_clauses: list[str] = []
+    for team_key, numbers in groups.items():
+        nums_str = ", ".join(str(n) for n in sorted(set(numbers)))
+        or_clauses.append(
+            f'{{ team: {{ key: {{ eq: "{team_key}" }} }}, '
+            f'number: {{ in: [{nums_str}] }} }}'
+        )
+
+    # Linear's filter syntax accepts ``or`` with a single element, so use it
+    # uniformly for any number of team groups.
+    filter_block = f"filter: {{ or: [{', '.join(or_clauses)}] }}"
+
+    total = sum(len(v) for v in groups.values())
+    query = f"""
+    query {{
+        issues(
+            first: {total}
+            {filter_block}
+        ) {{
+            nodes {{ {_ISSUE_FIELDS} }}
+        }}
+    }}
+    """
+    cache_key = "issues_by_identifiers_" + "_".join(
+        f"{tk}-{','.join(str(n) for n in sorted(set(nums)))}"
+        for tk, nums in sorted(groups.items())
+    )
+    result = _query(query, cache_key=cache_key)
+    return result.get("issues", {}).get("nodes", [])
+
+
 def fetch_issue_by_identifier(identifier: str) -> dict | None:
     """Fetch a single issue by identifier (e.g. 'CORE-123').
 

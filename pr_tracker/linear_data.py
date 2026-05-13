@@ -159,6 +159,45 @@ def fetch_my_linear_issues(
     return fetch_linear_issues(assignee_id=user_id, states=states, first=first)
 
 
+def fetch_linear_states_for_identifiers(
+    identifiers: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Bulk-fetch state info for a list of Linear identifiers.
+
+    Returns a map ``{identifier → {state_name, state_type, assignee, url, title}}``.
+    Missing identifiers are simply omitted from the result.
+
+    Returns an empty dict if no token is configured or the API call fails —
+    callers should treat absence of an entry as "unknown".
+    """
+    if not identifiers:
+        return {}
+    # De-dupe + uppercase
+    wanted = sorted({i.upper() for i in identifiers if i})
+    if not wanted:
+        return {}
+    try:
+        raw = linear_api.fetch_issues_by_identifiers(wanted)
+    except Exception:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for raw_issue in raw:
+        ident = (raw_issue.get("identifier") or "").upper()
+        if not ident:
+            continue
+        state = raw_issue.get("state") or {}
+        assignee = raw_issue.get("assignee") or {}
+        out[ident] = {
+            "state_name": state.get("name", ""),
+            "state_type": state.get("type", ""),
+            "state_color": state.get("color", ""),
+            "assignee": assignee.get("displayName", "") or assignee.get("name", ""),
+            "url": raw_issue.get("url", ""),
+            "title": raw_issue.get("title", ""),
+        }
+    return out
+
+
 def fetch_linear_issue_detail(identifier: str) -> dict[str, Any] | None:
     """Fetch a single Linear issue by identifier with full detail."""
     detail = linear_api.fetch_issue_detail_by_identifier(identifier)

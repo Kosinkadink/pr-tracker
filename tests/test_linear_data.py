@@ -237,3 +237,136 @@ def test_find_pr_id_none():
 def test_find_issue_id_in_body():
     issue = {"title": "Bug", "body": "Tracked in DESK2-42 — see Linear."}
     assert find_issue_linear_identifier(issue) == "DESK2-42"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Linear state pill / filter helpers
+# ---------------------------------------------------------------------------
+
+from pr_tracker.data import (  # noqa: E402
+    apply_linear_states,
+    filter_prs_by_linear,
+)
+from pr_tracker.display import _linear_pill_text  # noqa: E402
+
+
+def test_filter_no_linear_keeps_only_unlinked():
+    prs = [
+        {"number": 1, "linear_identifier": "DESK2-1", "linear_state_type": "started"},
+        {"number": 2, "linear_identifier": ""},
+        {"number": 3},
+    ]
+    out = filter_prs_by_linear(prs, no_linear=True)
+    assert [p["number"] for p in out] == [2, 3]
+
+
+def test_filter_active_state():
+    prs = [
+        {"number": 1, "linear_identifier": "DESK2-1", "linear_state_type": "started"},
+        {"number": 2, "linear_identifier": "DESK2-2", "linear_state_type": "completed"},
+        {"number": 3, "linear_identifier": "DESK2-3", "linear_state_type": "unstarted"},
+        {"number": 4, "linear_identifier": ""},
+    ]
+    out = filter_prs_by_linear(prs, linear_state="active")
+    assert [p["number"] for p in out] == [1, 3]
+
+
+def test_filter_done_state():
+    prs = [
+        {"number": 1, "linear_state_type": "started", "linear_identifier": "DESK2-1"},
+        {"number": 2, "linear_state_type": "completed", "linear_identifier": "DESK2-2"},
+    ]
+    out = filter_prs_by_linear(prs, linear_state="done")
+    assert [p["number"] for p in out] == [2]
+
+
+def test_filter_combines_no_linear_and_state():
+    # no_linear discards the linked PR before the state filter runs, leaving
+    # zero matches.
+    prs = [
+        {"number": 1, "linear_identifier": "DESK2-1", "linear_state_type": "started"},
+        {"number": 2, "linear_identifier": ""},
+    ]
+    out = filter_prs_by_linear(prs, linear_state="active", no_linear=True)
+    assert out == []
+
+
+def test_filter_passthrough_when_no_filters():
+    prs = [{"number": 1}, {"number": 2}]
+    out = filter_prs_by_linear(prs)
+    assert out == prs
+
+
+def test_pill_dim_when_no_identifier():
+    cell = _linear_pill_text({"linear_identifier": ""})
+    assert str(cell) == "-"
+
+
+def test_pill_shows_identifier_only_when_state_missing():
+    cell = _linear_pill_text({"linear_identifier": "DESK2-42"})
+    # No state name yet → dim identifier
+    assert str(cell) == "DESK2-42"
+
+
+def test_pill_shows_identifier_and_state():
+    cell = _linear_pill_text({
+        "linear_identifier": "DESK2-42",
+        "linear_state_name": "In Review",
+        "linear_state_type": "started",
+    })
+    assert str(cell) == "DESK2-42 · In Review"
+
+
+def test_apply_linear_states_noops_when_no_token(monkeypatch):
+    """Without a Linear token, apply_linear_states is a silent no-op."""
+    import pr_tracker.data as data_mod
+    monkeypatch.setattr("pr_tracker.config.load_linear_token", lambda: "")
+    prs = [{"linear_identifier": "DESK2-42"}]
+    data_mod.apply_linear_states(prs)
+    assert prs == [{"linear_identifier": "DESK2-42"}]
+
+
+def test_apply_linear_states_populates_fields(monkeypatch):
+    """When the token + lookup are present, fields land on the PR dict."""
+    import pr_tracker.data as data_mod
+    monkeypatch.setattr("pr_tracker.config.load_linear_token", lambda: "tok")
+    monkeypatch.setattr(
+        "pr_tracker.linear_data.fetch_linear_states_for_identifiers",
+        lambda ids: {
+            "DESK2-42": {
+                "state_name": "In Review",
+                "state_type": "started",
+                "state_color": "#ff0",
+                "assignee": "alice",
+                "url": "https://linear.app/x/issue/DESK2-42",
+                "title": "Fix the thing",
+            },
+        },
+    )
+    prs = [
+        {"linear_identifier": "DESK2-42"},
+        {"linear_identifier": "DESK2-99"},  # missing in lookup → untouched
+        {"linear_identifier": ""},
+    ]
+    data_mod.apply_linear_states(prs)
+    assert prs[0]["linear_state_name"] == "In Review"
+    assert prs[0]["linear_state_type"] == "started"
+    assert prs[0]["linear_url"].endswith("DESK2-42")
+    assert "linear_state_name" not in prs[1]
+    assert "linear_state_name" not in prs[2]
+
+
+def test_apply_linear_states_skips_when_no_identifiers(monkeypatch):
+    """No PRs with a linkage → no API call made."""
+    import pr_tracker.data as data_mod
+
+    monkeypatch.setattr("pr_tracker.config.load_linear_token", lambda: "tok")
+    calls = {"count": 0}
+    def boom(_ids):
+        calls["count"] += 1
+        return {}
+    monkeypatch.setattr(
+        "pr_tracker.linear_data.fetch_linear_states_for_identifiers", boom
+    )
+    data_mod.apply_linear_states([{"linear_identifier": ""}])
+    assert calls["count"] == 0
