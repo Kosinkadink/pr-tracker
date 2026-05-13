@@ -850,3 +850,83 @@ def test_attachment_title_for_commit():
 
     src = CommitSource(repo="x/y", sha="abcdef0123456789")
     assert _attachment_title(src) == "Commit x/y@abcdef0"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 follow-up: --from-thread
+# ---------------------------------------------------------------------------
+
+def test_parse_amp_thread_ref_from_bare_id():
+    from pr_tracker.linear_ops import parse_amp_thread_ref
+
+    tid = "T-019e238e-8925-743c-808e-350a3cb34013"
+    assert parse_amp_thread_ref(tid) == tid
+
+
+def test_parse_amp_thread_ref_from_threads_url():
+    from pr_tracker.linear_ops import parse_amp_thread_ref
+
+    url = "https://ampcode.com/threads/T-019e238e-8925-743c-808e-350a3cb34013"
+    assert parse_amp_thread_ref(url) == "T-019e238e-8925-743c-808e-350a3cb34013"
+
+
+def test_parse_amp_thread_ref_from_workspace_url():
+    from pr_tracker.linear_ops import parse_amp_thread_ref
+
+    url = "https://ampcode.com/v2/amp/amp/T-019d01b5-f70d-73ea-9445-f6d358f7213e"
+    assert parse_amp_thread_ref(url) == "T-019d01b5-f70d-73ea-9445-f6d358f7213e"
+
+
+def test_parse_amp_thread_ref_rejects_invalid():
+    import pytest
+    from pr_tracker.linear_ops import parse_amp_thread_ref
+
+    with pytest.raises(ValueError):
+        parse_amp_thread_ref("not-a-thread")
+    with pytest.raises(ValueError):
+        parse_amp_thread_ref("")
+
+
+def test_amp_thread_source_url():
+    from pr_tracker.linear_ops import AmpThreadSource
+
+    src = AmpThreadSource(thread_id="T-019e238e-8925-743c-808e-350a3cb34013")
+    assert src.url == "https://ampcode.com/threads/T-019e238e-8925-743c-808e-350a3cb34013"
+
+
+def test_compose_payload_from_thread_uses_thread_id_as_title():
+    from pr_tracker.linear_ops import AmpThreadSource, compose_payload
+
+    src = AmpThreadSource(thread_id="T-019e238e-8925-743c-808e-350a3cb34013")
+    payload = compose_payload(thread_source=src)
+    assert payload.title.startswith("Amp investigation: T-019e238e")
+    assert "Captured from Amp thread" in payload.body
+    assert "ampcode.com/threads/T-019e238e" in payload.body
+    assert payload.sources == [src]
+
+
+def test_compose_payload_thread_combines_with_pr(monkeypatch):
+    """Stacked PR + thread → PR is the title source, thread is attached."""
+    from pr_tracker import linear_ops
+    from pr_tracker.linear_ops import (
+        AmpThreadSource, GitHubPRSource, compose_payload,
+    )
+
+    monkeypatch.setattr(
+        linear_ops.github_api, "fetch_pr",
+        lambda repo, n: {"title": "PR title", "body": "PR body"},
+    )
+    payload = compose_payload(
+        pr_source=GitHubPRSource(repo="x/y", number=1),
+        thread_source=AmpThreadSource(thread_id="T-019e238e-8925-743c-808e-350a3cb34013"),
+    )
+    assert payload.title == "PR title"
+    assert "Captured from Amp thread" in payload.body
+    assert len(payload.sources) == 2
+
+
+def test_attachment_title_for_amp_thread():
+    from pr_tracker.linear_ops import AmpThreadSource, _attachment_title
+
+    src = AmpThreadSource(thread_id="T-019e238e-8925-743c-808e-350a3cb34013")
+    assert _attachment_title(src) == "Amp thread T-019e238e-8925-743c-808e-350a3cb34013"

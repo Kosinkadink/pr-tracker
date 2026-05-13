@@ -18,6 +18,7 @@ when the user explicitly asks.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -95,6 +96,36 @@ class CommitSource:
         if self.fetched is None:
             self.fetched = github_api.fetch_commit(self.repo, self.sha)
         return self.fetched
+
+
+@dataclass
+class AmpThreadSource:
+    """A reference to an Amp investigation thread.
+
+    Accepts the bare ``T-{uuid}`` ID or any ampcode.com URL whose final path
+    segment is the ID; ``url`` always renders the canonical ``threads/`` form.
+    """
+    thread_id: str
+
+    @property
+    def url(self) -> str:
+        return f"https://ampcode.com/threads/{self.thread_id}"
+
+
+_AMP_THREAD_ID_RE = re.compile(r"(T-[0-9a-fA-F-]{20,})")
+
+
+def parse_amp_thread_ref(ref: str) -> str:
+    """Return the canonical ``T-{uuid}`` identifier from a URL or bare ID.
+
+    Raises ``ValueError`` when no valid thread ID can be extracted.
+    """
+    if not ref:
+        raise ValueError("Empty Amp thread reference")
+    m = _AMP_THREAD_ID_RE.search(ref)
+    if not m:
+        raise ValueError(f"Could not parse Amp thread ID from {ref!r}")
+    return m.group(1)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +211,7 @@ def compose_payload(
     pr_source: GitHubPRSource | None = None,
     branch_source: BranchSource | None = None,
     commit_source: CommitSource | None = None,
+    thread_source: AmpThreadSource | None = None,
 ) -> IssuePayload:
     """Build an issue title + body from any combination of sources + overrides."""
     payload = IssuePayload()
@@ -232,6 +264,14 @@ def compose_payload(
         if rest:
             body_chunks.append("---\n\n" + rest)
         payload.add_source(commit_source)
+
+    if thread_source is not None:
+        if not payload.title and not title_override:
+            payload.title = f"Amp investigation: {thread_source.thread_id}"
+        body_chunks.append(
+            f"Captured from Amp thread [{thread_source.thread_id}]({thread_source.url})."
+        )
+        payload.add_source(thread_source)
 
     if title_override:
         payload.title = title_override
@@ -439,6 +479,8 @@ def _attachment_title(src: Any) -> str:
         return f"Branch {src.repo}@{src.branch}"
     if isinstance(src, CommitSource):
         return f"Commit {src.repo}@{src.short_sha}"
+    if isinstance(src, AmpThreadSource):
+        return f"Amp thread {src.thread_id}"
     return "External link"
 
 
@@ -474,12 +516,13 @@ def link_source(
     issue_source: GitHubIssueSource | None = None,
     pr_source: GitHubPRSource | None = None,
     branch_source: BranchSource | None = None,
+    thread_source: AmpThreadSource | None = None,
     inject_pr_body: bool = True,
     back_comment: bool = False,
     rename_branch: bool = False,
     dry_run: bool = False,
 ) -> LinkResult:
-    """Attach an existing Linear issue to a GitHub PR / issue / branch.
+    """Attach an existing Linear issue to a GitHub PR / issue / branch / Amp thread.
 
     With ``rename_branch=True`` and a ``branch_source``, the branch is renamed
     to include *identifier* before attaching (idempotent).
@@ -488,7 +531,10 @@ def link_source(
     """
     actions: list[str] = []
 
-    sources: list[Any] = [s for s in (issue_source, pr_source, branch_source) if s is not None]
+    sources: list[Any] = [
+        s for s in (issue_source, pr_source, branch_source, thread_source)
+        if s is not None
+    ]
     if not sources:
         raise ValueError("link_source: at least one source must be provided")
 

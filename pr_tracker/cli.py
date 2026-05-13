@@ -324,15 +324,23 @@ def _print_actions(label: str, actions: list[str]) -> None:
 
 
 def _build_sources(args: argparse.Namespace) -> dict:
-    """Translate --from-issue / --from-pr / --from-branch / --from-commit / --repo into source objects."""
+    """Translate --from-issue / --from-pr / --from-branch / --from-commit / --from-thread / --repo into source objects."""
     from .data import parse_ref
-    from .linear_ops import BranchSource, CommitSource, GitHubIssueSource, GitHubPRSource
+    from .linear_ops import (
+        AmpThreadSource,
+        BranchSource,
+        CommitSource,
+        GitHubIssueSource,
+        GitHubPRSource,
+        parse_amp_thread_ref,
+    )
 
     sources: dict = {
         "issue_source": None,
         "pr_source": None,
         "branch_source": None,
         "commit_source": None,
+        "thread_source": None,
     }
 
     if getattr(args, "from_issue", None):
@@ -351,6 +359,12 @@ def _build_sources(args: argparse.Namespace) -> dict:
         if not repo:
             raise SystemExit("--from-commit requires --repo owner/repo")
         sources["commit_source"] = CommitSource(repo=repo, sha=args.from_commit)
+    if getattr(args, "from_thread", None):
+        try:
+            tid = parse_amp_thread_ref(args.from_thread)
+        except ValueError as e:
+            raise SystemExit(f"--from-thread: {e}")
+        sources["thread_source"] = AmpThreadSource(thread_id=tid)
     return sources
 
 
@@ -417,13 +431,21 @@ def cmd_linear_create(args: argparse.Namespace) -> None:
 
 
 def cmd_linear_link(args: argparse.Namespace) -> None:
-    """Attach a GitHub PR / issue / branch to an existing Linear ticket."""
+    """Attach a GitHub PR / issue / branch / Amp thread to an existing Linear ticket."""
     from .data import parse_ref
-    from .linear_ops import BranchSource, GitHubIssueSource, GitHubPRSource, link_source
+    from .linear_ops import (
+        AmpThreadSource,
+        BranchSource,
+        GitHubIssueSource,
+        GitHubPRSource,
+        link_source,
+        parse_amp_thread_ref,
+    )
 
     issue_source = None
     pr_source = None
     branch_source = None
+    thread_source = None
 
     if args.target:
         repo, n = parse_ref(args.target)
@@ -440,14 +462,22 @@ def cmd_linear_link(args: argparse.Namespace) -> None:
             raise SystemExit("--branch requires --repo owner/repo")
         branch_source = BranchSource(repo=args.repo, branch=args.branch)
 
-    if not (issue_source or pr_source or branch_source):
-        raise SystemExit("link: pass a target (e.g. owner/repo#123) and/or --branch")
+    if getattr(args, "thread", None):
+        try:
+            tid = parse_amp_thread_ref(args.thread)
+        except ValueError as e:
+            raise SystemExit(f"--thread: {e}")
+        thread_source = AmpThreadSource(thread_id=tid)
+
+    if not (issue_source or pr_source or branch_source or thread_source):
+        raise SystemExit("link: pass a target (e.g. owner/repo#123), --branch, or --thread")
 
     result = link_source(
         args.identifier,
         issue_source=issue_source,
         pr_source=pr_source,
         branch_source=branch_source,
+        thread_source=thread_source,
         inject_pr_body=not args.no_pr_edit,
         back_comment=args.back_comment,
         rename_branch=getattr(args, "rename", False),
@@ -921,6 +951,8 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_create.add_argument("--from-branch", metavar="BRANCH", help="Track a branch (requires --repo)")
     p_linear_create.add_argument("--from-commit", metavar="SHA",
                                  help="Mint a follow-up ticket from a shipped commit (requires --repo)")
+    p_linear_create.add_argument("--from-thread", metavar="REF",
+                                 help="Capture an Amp investigation (T-{uuid} or full ampcode.com URL)")
     p_linear_create.add_argument("--repo", help="owner/repo (used with --from-branch / --from-commit)")
     p_linear_create.add_argument("--rename-branch", action="store_true",
         help="Rename the source branch to include the new identifier (requires --from-branch)")
@@ -938,6 +970,8 @@ def main(argv: list[str] | None = None) -> None:
     p_linear_link.add_argument("identifier", help="Linear identifier (e.g. DESK2-42)")
     p_linear_link.add_argument("target", nargs="?", help="GitHub ref (e.g. owner/repo#123)")
     p_linear_link.add_argument("--branch", help="Branch name to attach (requires --repo)")
+    p_linear_link.add_argument("--thread", metavar="REF",
+                               help="Attach an Amp thread (T-{uuid} or full ampcode.com URL)")
     p_linear_link.add_argument("--repo", help="owner/repo (used with --branch)")
     p_linear_link.add_argument("--rename", action="store_true",
         help="Rename --branch to include the Linear identifier (idempotent)")

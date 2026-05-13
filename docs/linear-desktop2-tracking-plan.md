@@ -60,9 +60,14 @@ To be added to `ComfyUI-Launcher/AGENTS.md` once Phase 4 ships.
 
 ---
 
-## Phase 4 — pr-tracker write commands ✅ MOSTLY DONE (PR #11)
+## Phase 4 — pr-tracker write commands ✅ DONE (PR #11 + `feat/linear-pr-pills` follow-ups)
 
-Status: `create`, `link`, `move`, `comment`, `backfill`, `sync` shipped. `linear comment --from-pr / --from-issue / --from-branch` context formatting also shipped (Phase 4 follow-up). `linear backfill --branches` shipped (Phase 4 follow-up). `linear create --rename-branch` and `linear link --rename` shipped (Phase 4 follow-up; backed by new `github_api.rename_branch`). `linear create --from-commit <sha>` shipped (Phase 4 follow-up; new `CommitSource` + `github_api.fetch_commit`; uses commit subject as title, body chunk explains "Follow-up to commit"). Outstanding gap: `--from-thread`.
+Status: `create`, `link`, `move`, `comment`, `backfill`, `sync` shipped. All originally-outstanding gaps are now closed:
+- `linear comment --from-pr / --from-issue / --from-branch` context formatting (markdown context block).
+- `linear backfill --branches` (walks branches without an open PR or DESK2-N).
+- `linear create --rename-branch` and `linear link --rename` (backed by new `github_api.rename_branch`; idempotent).
+- `linear create --from-commit <sha>` (new `CommitSource` + `github_api.fetch_commit`).
+- `linear create --from-thread <amp-thread-url-or-id>` and `linear link --thread <ref>` (new `AmpThreadSource` + `parse_amp_thread_ref`).
 
 
 All commands live under `pr_tracker linear`. All `--from-*` flags are **optional and stackable**. `--title`/`--body` always overrides whatever the source provides.
