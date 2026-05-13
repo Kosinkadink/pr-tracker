@@ -272,17 +272,34 @@ class StationDetailScreen(Screen):
         # Completed station → release (set to idle for reuse)
         station = self._station
         if station:
-            from pr_tracker.stations import cleanup_station
             sid = station.get("id", "?")
-            cleanup_station(sid)
-            self.notify(f"Station {sid} released (idle)")
-            # Reload station data to reflect idle status
-            from pr_tracker.stations import get_station
-            self._station = get_station(sid)
-            self._refresh()
+            from pr_tracker.stations import check_uncommitted_changes
+            dirty = check_uncommitted_changes(sid) if isinstance(sid, int) else []
+            if dirty:
+                from .confirm import ConfirmScreen
+                repo_list = ", ".join(dirty)
+                msg = (
+                    f"Release station {sid}?\n\n"
+                    f"[bold red]WARNING:[/bold red] uncommitted changes will be DESTROYED in:\n"
+                    f"  {repo_list}\n\n"
+                    f"This runs `git checkout main` and `git clean -fd` on every nested repo."
+                )
+                self.app.push_screen(
+                    ConfirmScreen(msg),
+                    callback=lambda confirmed: self._do_release(sid) if confirmed else None,
+                )
+                return
+            self._do_release(sid)
             return
 
         self.notify("Nothing to cancel or release")
+
+    def _do_release(self, sid) -> None:
+        from pr_tracker.stations import cleanup_station, get_station
+        cleanup_station(sid)
+        self.notify(f"Station {sid} released (idle)")
+        self._station = get_station(sid)
+        self._refresh()
 
     def action_close(self) -> None:
         if self._timer:

@@ -329,12 +329,33 @@ class StationListScreen(Screen):
             self.notify(f"Station {station['id']} is already idle")
             return
         sid = station["id"]
+
+        from pr_tracker.stations import check_uncommitted_changes
+        dirty = check_uncommitted_changes(sid)
+        if dirty:
+            from .confirm import ConfirmScreen
+            repo_list = ", ".join(dirty)
+            msg = (
+                f"Release station {sid}?\n\n"
+                f"[bold red]WARNING:[/bold red] uncommitted changes will be DESTROYED in:\n"
+                f"  {repo_list}\n\n"
+                f"This runs `git checkout main` and `git clean -fd` on every nested repo."
+            )
+            self.app.push_screen(
+                ConfirmScreen(msg),
+                callback=lambda confirmed: self._do_release(sid) if confirmed else None,
+            )
+            return
+
+        self._do_release(sid)
+
+    def _do_release(self, sid: int) -> None:
         from pr_tracker.stations import update_station
         update_station(sid, status="releasing")
         self._refresh_table()
         self.notify(f"Releasing station {sid}…")
 
-        def _do_release() -> None:
+        def _worker() -> None:
             from pr_tracker.stations import cleanup_station
             cleanup_station(sid)
             self.app.call_from_thread(
@@ -342,7 +363,7 @@ class StationListScreen(Screen):
             )
             self.app.call_from_thread(self._refresh_table)
 
-        self.run_worker(_do_release, thread=True)
+        self.run_worker(_worker, thread=True)
 
     def action_destroy(self) -> None:
         """Delete a station — remove directory and unregister."""
