@@ -6,6 +6,7 @@ Renders pre-enriched dicts from data.py — no GitHub API calls here.
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from rich.console import Console
@@ -17,7 +18,18 @@ try:
     _width = os.get_terminal_size().columns
 except (ValueError, OSError):
     _width = 160
-console = Console(width=max(_width, 140))
+
+# On Windows, force UTF-8 stdout so rich can render arrows / box drawing
+# without crashing on cp1252 (e.g. '\u2192').  legacy_windows=False routes
+# rendering through the modern terminal API, which respects UTF-8.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
+    console = Console(width=max(_width, 140), legacy_windows=False)
+else:
+    console = Console(width=max(_width, 140))
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +82,75 @@ def _state_text(state_label: str) -> Text:
     return Text("open", style="green")
 
 
+# Map Linear state types to a Rich style for the pill cell
+_LINEAR_PILL_STYLES = {
+    "started": "yellow",
+    "unstarted": "blue",
+    "backlog": "dim",
+    "completed": "green",
+    "cancelled": "red",
+}
+
+# Linear state types that indicate the ticket is still active.  Used to flag
+# merged PRs whose Linear ticket hasn't been moved to a completed state.
+_LINEAR_ACTIVE_TYPES = {"started", "unstarted"}
+
+
+def _linear_pill_text(pr: dict[str, Any], repo: str | None = None) -> Text:
+    """Render a small ``DESK2-42 · In Review`` pill for a PR row.
+
+    When the PR has no Linear linkage but its repo is mapped to a Linear team
+    in ``linear_repo_teams`` config, returns a dim yellow ``+ TEAM?`` hint.
+    Otherwise returns a dim ``-``.
+
+    For merged PRs whose Linear ticket is still in an active state
+    (``started`` / ``unstarted``), prefixes a ``⚠ `` mismatch glyph.
+
+    When the PR has a Linear *attachment* but no ``DESK2-N`` reference in
+    branch/title/body, renders a yellow ``⚠ DESK2-N (no ref)`` warning so the
+    user can either add the ``Fixes`` line or accept the attachment-only link.
+    """
+    ident = pr.get("linear_identifier") or ""
+    if not ident:
+        att_ident = pr.get("linear_attachment_identifier") or ""
+        if att_ident:
+            att_state = pr.get("linear_attachment_state_name") or ""
+            label = f"{att_ident} · {att_state}" if att_state else att_ident
+            return Text(f"⚠ {label} (no ref)", style="yellow")
+        team = _team_hint_for_repo(repo or pr.get("repo"))
+        if team:
+            return Text(f"+ {team}?", style="dim yellow")
+        return Text("-", style="dim")
+    state_name = pr.get("linear_state_name") or ""
+    state_type = pr.get("linear_state_type") or ""
+    style = _LINEAR_PILL_STYLES.get(state_type, "white")
+    is_merged = (pr.get("state_label") or "") == "merged"
+    mismatch = is_merged and state_type in _LINEAR_ACTIVE_TYPES
+    prefix = "⚠ " if mismatch else ""
+    if state_name:
+        text = Text(f"{prefix}{ident} · {state_name}", style=style)
+    else:
+        text = Text(f"{prefix}{ident}", style="dim")
+    return text
+
+
+def _team_hint_for_repo(repo: str | None) -> str | None:
+    """Return the configured Linear team key for a repo, if any.
+
+    Imported lazily to avoid a circular import between display and config.
+    """
+    if not repo:
+        return None
+    try:
+        from pr_tracker.config import linear_team_for_repo
+    except Exception:
+        return None
+    try:
+        return linear_team_for_repo(repo)
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Table renderers
 # ---------------------------------------------------------------------------
@@ -87,10 +168,11 @@ def render_pr_table(
 
     table = Table(title=f"{title} - {repo}", show_lines=False, pad_edge=False, min_width=140)
     table.add_column("#", style="bold", width=6, justify="right")
-    table.add_column("Title", width=45, no_wrap=True, overflow="ellipsis")
-    table.add_column("Author", style="blue", width=20, no_wrap=True)
+    table.add_column("Title", width=40, no_wrap=True, overflow="ellipsis")
+    table.add_column("Author", style="blue", width=18, no_wrap=True)
     table.add_column("State", width=7)
-    table.add_column("Labels", width=16, no_wrap=True, overflow="ellipsis")
+    table.add_column("Linear", width=24, no_wrap=True, overflow="ellipsis")
+    table.add_column("Labels", width=14, no_wrap=True, overflow="ellipsis")
     table.add_column("CI", width=10)
     table.add_column("Behind", width=10)
     table.add_column("Commit", width=7, justify="right")
@@ -103,11 +185,18 @@ def render_pr_table(
         number_link = Text(str(number), style=f"bold link {pr_url}")
         title_link = Text(pr.get("title", ""), style=f"link {pr_url}")
 
+        # Make the Linear pill clickable when we know its URL
+        linear_cell = _linear_pill_text(pr, repo=repo)
+        linear_url = pr.get("linear_url") or ""
+        if linear_url:
+            linear_cell.stylize(f"link {linear_url}")
+
         table.add_row(
             number_link,
             title_link,
             pr.get("author", "?"),
             _state_text(pr.get("state_label", "open")),
+            linear_cell,
             _label_text(pr.get("label_names", [])),
             _ci_text(pr.get("ci", {})),
             _behind_text(pr.get("behind", {})),

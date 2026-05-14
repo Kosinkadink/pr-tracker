@@ -184,12 +184,40 @@ def load_linear_config() -> dict:
     Keys:
         linear_teams: list of team keys/names to track (e.g. ["Core Engine", "Desktop"])
         linear_user_id: your Linear user ID (for "assigned to me" queries)
+        linear_repo_teams: mapping of GitHub ``owner/repo`` → Linear team key/name
+            used to auto-pick a team when creating a Linear issue from a
+            PR / issue / branch source.  Falls back to the first entry in
+            ``linear_teams`` when the repo isn't mapped.
     """
     config = load_tracker_config()
+    repo_teams = config.get("linear_repo_teams", {})
+    if not isinstance(repo_teams, dict):
+        repo_teams = {}
     return {
         "linear_teams": config.get("linear_teams", []),
         "linear_user_id": config.get("linear_user_id", ""),
+        "linear_repo_teams": repo_teams,
     }
+
+
+def linear_team_for_repo(repo: str | None) -> str | None:
+    """Return the Linear team key/name configured for *repo*, or ``None``.
+
+    Lookup is case-insensitive on the ``owner/repo`` key so callers don't
+    have to worry about exact casing in the config file.
+    """
+    if not repo:
+        return None
+    mapping = load_linear_config().get("linear_repo_teams") or {}
+    if not isinstance(mapping, dict):
+        return None
+    if repo in mapping and isinstance(mapping[repo], str) and mapping[repo]:
+        return mapping[repo]
+    target = repo.lower()
+    for key, value in mapping.items():
+        if isinstance(key, str) and key.lower() == target and isinstance(value, str) and value:
+            return value
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,15 @@ def _headers() -> dict[str, str]:
     return h
 
 
+def invalidate_cache() -> None:
+    """Drop every cached Linear response.
+
+    Called after any mutation so back-to-back reads see fresh data
+    instead of being served stale entries from the 60s TTL cache.
+    """
+    _cache.clear_all()
+
+
 def _query(query: str, variables: dict | None = None, cache_key: str = "") -> dict:
     """Execute a GraphQL query against the Linear API.
 
@@ -178,6 +187,61 @@ def fetch_team_issues(
     return result.get("issues", {}).get("nodes", [])
 
 
+def fetch_issues_by_identifiers(identifiers: list[str]) -> list[dict]:
+    """Fetch multiple issues by identifier in a single batched query.
+
+    Identifiers are grouped by team key so we can use ``number: { in: [...] }``
+    per team and ``or`` across teams.  Order of returned issues is undefined.
+
+    Returns an empty list when *identifiers* is empty or no token is configured.
+    """
+    import re
+    if not identifiers:
+        return []
+
+    groups: dict[str, list[int]] = {}
+    for ident in identifiers:
+        m = re.match(r"^([A-Za-z][A-Za-z0-9]*)-(\d+)$", ident.strip())
+        if not m:
+            continue
+        team_key = m.group(1).upper()
+        number = int(m.group(2))
+        groups.setdefault(team_key, []).append(number)
+
+    if not groups:
+        return []
+
+    or_clauses: list[str] = []
+    for team_key, numbers in groups.items():
+        nums_str = ", ".join(str(n) for n in sorted(set(numbers)))
+        or_clauses.append(
+            f'{{ team: {{ key: {{ eq: "{team_key}" }} }}, '
+            f'number: {{ in: [{nums_str}] }} }}'
+        )
+
+    # Linear's filter syntax accepts ``or`` with a single element, so use it
+    # uniformly for any number of team groups.
+    filter_block = f"filter: {{ or: [{', '.join(or_clauses)}] }}"
+
+    total = sum(len(v) for v in groups.values())
+    query = f"""
+    query {{
+        issues(
+            first: {total}
+            {filter_block}
+        ) {{
+            nodes {{ {_ISSUE_FIELDS} }}
+        }}
+    }}
+    """
+    cache_key = "issues_by_identifiers_" + "_".join(
+        f"{tk}-{','.join(str(n) for n in sorted(set(nums)))}"
+        for tk, nums in sorted(groups.items())
+    )
+    result = _query(query, cache_key=cache_key)
+    return result.get("issues", {}).get("nodes", [])
+
+
 def fetch_issue_by_identifier(identifier: str) -> dict | None:
     """Fetch a single issue by identifier (e.g. 'CORE-123').
 
@@ -187,7 +251,8 @@ def fetch_issue_by_identifier(identifier: str) -> dict | None:
     Returns the issue dict or None if not found.
     """
     import re
-    m = re.match(r"^([A-Za-z]+)-(\d+)$", identifier.strip())
+    # Team keys may contain digits (e.g. DESK2), so allow [A-Za-z][A-Za-z0-9]*
+    m = re.match(r"^([A-Za-z][A-Za-z0-9]*)-(\d+)$", identifier.strip())
     if not m:
         return None
     team_key = m.group(1).upper()
@@ -209,6 +274,74 @@ def fetch_issue_by_identifier(identifier: str) -> dict | None:
     result = _query(query, cache_key=f"issue_{identifier.upper()}")
     nodes = result.get("issues", {}).get("nodes", [])
     return nodes[0] if nodes else None
+
+
+_ATTACHMENTS_BATCH_SIZE = 50
+
+
+def fetch_attachment_issues_for_urls(urls: list[str]) -> dict[str, dict]:
+    """Look up Linear issues attached to each URL via ``attachmentsForURL``.
+
+    Returns ``{url → issue_dict}`` for URLs that have at least one attachment.
+    URLs without an attachment are simply omitted from the result.  When
+    multiple Linear issues attach the same URL the first one returned by the
+    API wins (deterministic enough for our warning glyph).
+
+    Batches lookups via field aliases (default 50 URLs per request) to keep
+    the GraphQL query complexity bounded while still avoiding N HTTP calls
+    per repo.  Returns an empty dict when no token is configured or the API
+    call fails for every batch.
+    """
+    if not urls:
+        return {}
+    # De-dupe while preserving order
+    seen: dict[str, None] = {}
+    for u in urls:
+        if u and u not in seen:
+            seen[u] = None
+    unique = list(seen.keys())
+    if not unique:
+        return {}
+
+    out: dict[str, dict] = {}
+    for start in range(0, len(unique), _ATTACHMENTS_BATCH_SIZE):
+        batch = unique[start:start + _ATTACHMENTS_BATCH_SIZE]
+        out.update(_fetch_attachment_issues_batch(batch))
+    return out
+
+
+def _fetch_attachment_issues_batch(batch: list[str]) -> dict[str, dict]:
+    """Single aliased GraphQL request for one bounded batch of URLs."""
+    import hashlib
+
+    var_decls = ", ".join(f"$u{i}: String!" for i in range(len(batch)))
+    aliased = "\n".join(
+        f'        a{i}: attachmentsForURL(url: $u{i}) {{ '
+        f'nodes {{ url issue {{ {_ISSUE_FIELDS} }} }} '
+        f'}}'
+        for i in range(len(batch))
+    )
+    query = f"query({var_decls}) {{\n{aliased}\n}}"
+    variables = {f"u{i}": u for i, u in enumerate(batch)}
+
+    # Hash the URL set so the cache filename stays a fixed length regardless
+    # of how many (or how long) URLs are in the batch.
+    digest = hashlib.md5("\n".join(sorted(batch)).encode("utf-8")).hexdigest()
+    cache_key = f"attachments_for_urls_{digest}"
+    try:
+        result = _query(query, variables, cache_key=cache_key)
+    except Exception:
+        return {}
+
+    out: dict[str, dict] = {}
+    for i, url in enumerate(batch):
+        nodes = (result.get(f"a{i}") or {}).get("nodes", []) or []
+        for node in nodes:
+            issue = node.get("issue") or {}
+            if issue.get("identifier"):
+                out[url] = issue
+                break
+    return out
 
 
 def fetch_issue_detail(issue_id: str) -> dict | None:
@@ -239,3 +372,203 @@ def fetch_issue_detail_by_identifier(identifier: str) -> dict | None:
     if not issue:
         return None
     return fetch_issue_detail(issue["id"])
+
+
+# ---------------------------------------------------------------------------
+# Workflow state queries
+# ---------------------------------------------------------------------------
+
+def fetch_workflow_states(team_id: str) -> list[dict]:
+    """Fetch the workflow states for a team. Returns list of {id, name, type, color}."""
+    query = """
+    query($id: String!) {
+        team(id: $id) {
+            states { nodes { id name type color position } }
+        }
+    }
+    """
+    result = _query(query, {"id": team_id}, cache_key=f"states_{team_id}")
+    team = result.get("team") or {}
+    return (team.get("states") or {}).get("nodes", [])
+
+
+def resolve_state_id(team_id: str, state_alias: str) -> str | None:
+    """Resolve a friendly state name to a team-specific state ID.
+
+    Accepts either a Linear state ``type`` (``backlog``, ``unstarted``,
+    ``started``, ``completed``, ``cancelled``) or a friendly alias
+    (``todo``, ``in-progress``, ``in-review``, ``done``, ``cancelled``,
+    ``backlog``).  When multiple states share the same type, the lowest
+    ``position`` (the team's default for that type) wins.
+    """
+    if not state_alias:
+        return None
+    alias = state_alias.lower().strip()
+    alias_to_type = {
+        "todo": "unstarted",
+        "in-progress": "started",
+        "in_progress": "started",
+        "in-review": "started",
+        "in_review": "started",
+        "done": "completed",
+        "completed": "completed",
+        "cancelled": "cancelled",
+        "canceled": "cancelled",
+        "backlog": "backlog",
+        "unstarted": "unstarted",
+        "started": "started",
+    }
+    target_type = alias_to_type.get(alias, alias)
+    states = fetch_workflow_states(team_id)
+    # First pass: prefer state whose name matches the alias (e.g. "In Review")
+    name_match = [s for s in states if s.get("name", "").lower() == alias.replace("_", " ").replace("-", " ")]
+    if name_match:
+        return name_match[0]["id"]
+    type_match = [s for s in states if s.get("type") == target_type]
+    if not type_match:
+        return None
+    type_match.sort(key=lambda s: s.get("position", 0))
+    return type_match[0]["id"]
+
+
+# ---------------------------------------------------------------------------
+# User queries
+# ---------------------------------------------------------------------------
+
+def fetch_viewer() -> dict:
+    """Return the authenticated user's profile."""
+    result = _query("{ viewer { id name displayName email } }", cache_key="viewer")
+    return result.get("viewer") or {}
+
+
+# ---------------------------------------------------------------------------
+# Mutations
+# ---------------------------------------------------------------------------
+
+def create_issue(
+    team_id: str,
+    title: str,
+    *,
+    body: str = "",
+    priority: int | None = None,
+    state_id: str = "",
+    assignee_id: str = "",
+) -> dict:
+    """Create a new Linear issue. Returns the created issue dict."""
+    fields = ['teamId: $teamId', 'title: $title']
+    variables: dict[str, Any] = {"teamId": team_id, "title": title}
+    var_decls = ['$teamId: String!', '$title: String!']
+
+    if body:
+        fields.append("description: $description")
+        var_decls.append("$description: String!")
+        variables["description"] = body
+    if priority is not None:
+        fields.append("priority: $priority")
+        var_decls.append("$priority: Int!")
+        variables["priority"] = priority
+    if state_id:
+        fields.append("stateId: $stateId")
+        var_decls.append("$stateId: String!")
+        variables["stateId"] = state_id
+    if assignee_id:
+        fields.append("assigneeId: $assigneeId")
+        var_decls.append("$assigneeId: String!")
+        variables["assigneeId"] = assignee_id
+
+    mutation = f"""
+    mutation({", ".join(var_decls)}) {{
+        issueCreate(input: {{ {", ".join(fields)} }}) {{
+            success
+            issue {{ {_ISSUE_FIELDS} }}
+        }}
+    }}
+    """
+    result = _query(mutation, variables)
+    payload = result.get("issueCreate") or {}
+    if not payload.get("success"):
+        raise RuntimeError("Linear issueCreate did not return success")
+    invalidate_cache()
+    return payload.get("issue") or {}
+
+
+def update_issue(issue_id: str, **fields: Any) -> dict:
+    """Update an existing issue.  Allowed fields: stateId, priority,
+    assigneeId, title, description.  Returns the updated issue."""
+    if not fields:
+        raise ValueError("update_issue: no fields to update")
+
+    field_specs = []
+    var_decls = ["$id: String!"]
+    variables: dict[str, Any] = {"id": issue_id}
+    type_map = {
+        "stateId": "String!",
+        "assigneeId": "String!",
+        "priority": "Int!",
+        "title": "String!",
+        "description": "String!",
+    }
+    for key, val in fields.items():
+        if key not in type_map:
+            raise ValueError(f"update_issue: unknown field '{key}'")
+        if val is None:
+            continue
+        field_specs.append(f"{key}: ${key}")
+        var_decls.append(f"${key}: {type_map[key]}")
+        variables[key] = val
+
+    if not field_specs:
+        raise ValueError("update_issue: all field values were None")
+
+    mutation = f"""
+    mutation({", ".join(var_decls)}) {{
+        issueUpdate(id: $id, input: {{ {", ".join(field_specs)} }}) {{
+            success
+            issue {{ {_ISSUE_FIELDS} }}
+        }}
+    }}
+    """
+    result = _query(mutation, variables)
+    payload = result.get("issueUpdate") or {}
+    if not payload.get("success"):
+        raise RuntimeError("Linear issueUpdate did not return success")
+    invalidate_cache()
+    return payload.get("issue") or {}
+
+
+def create_comment(issue_id: str, body: str) -> dict:
+    """Post a comment on a Linear issue."""
+    mutation = """
+    mutation($issueId: String!, $body: String!) {
+        commentCreate(input: { issueId: $issueId, body: $body }) {
+            success
+            comment { id body createdAt }
+        }
+    }
+    """
+    result = _query(mutation, {"issueId": issue_id, "body": body})
+    payload = result.get("commentCreate") or {}
+    if not payload.get("success"):
+        raise RuntimeError("Linear commentCreate did not return success")
+    invalidate_cache()
+    return payload.get("comment") or {}
+
+
+def attach_url(issue_id: str, url: str, title: str = "") -> dict:
+    """Attach an external URL (GitHub PR/issue/branch, Amp thread, etc.)
+    to a Linear issue."""
+    mutation = """
+    mutation($issueId: String!, $url: String!, $title: String) {
+        attachmentLinkURL(issueId: $issueId, url: $url, title: $title) {
+            success
+            attachment { id url title }
+        }
+    }
+    """
+    variables: dict[str, Any] = {"issueId": issue_id, "url": url, "title": title or url}
+    result = _query(mutation, variables)
+    payload = result.get("attachmentLinkURL") or {}
+    if not payload.get("success"):
+        raise RuntimeError("Linear attachmentLinkURL did not return success")
+    invalidate_cache()
+    return payload.get("attachment") or {}

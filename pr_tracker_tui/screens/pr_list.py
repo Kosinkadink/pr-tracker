@@ -12,7 +12,7 @@ from textual.worker import Worker, WorkerState
 
 from .github_list_base import GitHubListScreen
 
-COL_KEYS = ["num", "title", "author", "state", "labels", "ci", "behind", "updated", "created", "reply", "tags"]
+COL_KEYS = ["num", "title", "author", "state", "linear", "labels", "ci", "behind", "updated", "created", "reply", "tags"]
 
 
 class PRListScreen(GitHubListScreen):
@@ -37,6 +37,8 @@ class PRListScreen(GitHubListScreen):
         Binding("W", "create_station", "New Station"),
         Binding("l", "toggle_log", "Log"),
         Binding("L", "switch_to_linear", "Linear"),
+        Binding("C", "create_linear", "New Linear"),
+        Binding("M", "move_linear", "Linear State"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -63,17 +65,18 @@ class PRListScreen(GitHubListScreen):
 
     def _column_labels_and_keys(self) -> list[tuple[str, str]]:
         return list(zip(
-            ["#", "Title", "Author", "State", "Labels", "CI", "Behind", "Updated", "Created", "Reply", "Tags"],
+            ["#", "Title", "Author", "State", "Linear", "Labels", "CI", "Behind", "Updated", "Created", "Reply", "Tags"],
             COL_KEYS,
         ))
 
     def _column_kwargs(self) -> dict[str, dict]:
         return {
             "num": {"width": 10},
-            "title": {"width": 50},
-            "author": {"width": 20},
+            "title": {"width": 45},
+            "author": {"width": 18},
             "state": {"width": 7},
-            "labels": {"width": 16},
+            "linear": {"width": 22},
+            "labels": {"width": 14},
             "ci": {"width": 10},
             "behind": {"width": 10},
             "updated": {"width": 7},
@@ -100,10 +103,14 @@ class PRListScreen(GitHubListScreen):
             " ".join(item.get("label_names", [])),
             " ".join(item.get("tags", [])),
             item.get("repo", ""),
+            item.get("linear_identifier", ""),
+            item.get("linear_state_name", ""),
         ]
         return search in " ".join(fields).lower()
 
     def _item_row_cells(self, item: dict) -> tuple:
+        from pr_tracker.display import _linear_pill_text
+
         enriched = item.get("_enriched", False)
 
         # CI — semantic colors
@@ -157,11 +164,14 @@ class PRListScreen(GitHubListScreen):
             indicators += "🌐?" if self.app.remote_deploys_stale else "🌐"
         num_str = f"{item['number']} {indicators}" if indicators else str(item["number"])
 
+        linear_cell = _linear_pill_text(item, repo=item.get("repo"))
+
         return (
             num_str,
             item.get("title", "")[:50],
             self._author_cell(item),
             item.get("state_label", "?"),
+            linear_cell,
             labels[:20],
             ci_cell,
             behind_cell,
@@ -187,7 +197,10 @@ class PRListScreen(GitHubListScreen):
             pr["tags"] = all_tags.get(key, [])
 
     def _fetch_items_worker(self, worker, gen: int) -> list[dict]:
-        from pr_tracker.data import apply_cached_enrichment, enrich_pr, is_pinned
+        from pr_tracker.data import (
+            apply_cached_enrichment, apply_linear_attachments,
+            apply_linear_states, enrich_pr, is_pinned,
+        )
         from pr_tracker import github_api
 
         repos = [self._repo] if self._repo else []
@@ -224,6 +237,18 @@ class PRListScreen(GitHubListScreen):
                 apply_cached_enrichment(ep)
                 ep["_pinned"] = is_pinned(repo, ep["number"])
                 enriched.append(ep)
+
+            # Bulk-fetch Linear states once per repo group, then push the batch
+            # to the UI so pills appear on first render rather than after a
+            # follow-up enrichment pass.
+            try:
+                apply_linear_states(enriched)
+            except Exception:
+                pass
+            try:
+                apply_linear_attachments(enriched)
+            except Exception:
+                pass
 
             self._repo_groups.append({"repo": repo, "prs": enriched})
             all_enriched.extend(enriched)
@@ -386,8 +411,32 @@ class PRListScreen(GitHubListScreen):
         self.app.switch_screen(BranchListScreen(repo=self._repo))
 
     def action_switch_to_linear(self) -> None:
+        """L key: jump to the linked Linear issue if the selected PR has one,
+        otherwise open the team Linear list as a fallback."""
+        pr = self._selected_item()
+        identifier = (pr or {}).get("linear_identifier") or ""
+        if identifier:
+            self._open_linear_detail(pr, identifier)
+            return
         from .linear_issue_list import LinearIssueListScreen
         self.app.switch_screen(LinearIssueListScreen())
+
+    def _open_linear_detail(self, pr: dict, identifier: str) -> None:
+        """Push the LinearIssueDetailScreen pre-seeded with cached fields from
+        the PR row. The screen fetches full detail (comments, etc.) in the
+        background."""
+        from .linear_issue_detail import LinearIssueDetailScreen
+
+        seed = {
+            "identifier": identifier,
+            "title": pr.get("linear_title", "") or pr.get("title", ""),
+            "state_name": pr.get("linear_state_name", ""),
+            "state_type": pr.get("linear_state_type", ""),
+            "assignee": pr.get("linear_assignee", ""),
+            "url": pr.get("linear_url", ""),
+            "team_key": identifier.split("-", 1)[0] if "-" in identifier else "",
+        }
+        self.app.push_screen(LinearIssueDetailScreen(seed))
 
     def action_deploy(self) -> None:
         pr = self._selected_item()

@@ -21,6 +21,7 @@ class LinearIssueDetailScreen(Screen):
         Binding("q", "close", "Back"),
         Binding("g", "open_in_browser", "Open in browser"),
         Binding("L", "open_in_browser", "Open in Linear"),
+        Binding("M", "move_linear", "Move State"),
     ]
 
     def __init__(self, issue: dict) -> None:
@@ -109,6 +110,33 @@ class LinearIssueDetailScreen(Screen):
         if url:
             webbrowser.open(url)
             self.notify(f"Opened {url}")
+
+    def action_move_linear(self) -> None:
+        identifier = self._issue.get("identifier") or ""
+        if not identifier:
+            self.notify("No Linear identifier on this issue")
+            return
+        from .linear_state_picker import LinearStatePickerScreen
+        self.app.push_screen(
+            LinearStatePickerScreen(
+                identifier,
+                current_state=self._issue.get("state_name", ""),
+            ),
+            callback=self._on_move_result,
+        )
+
+    def _on_move_result(self, result: dict | None) -> None:
+        if not result:
+            return
+        # Map pill keys onto the issue dict's vocabulary
+        if result.get("linear_state_name"):
+            self._issue["state_name"] = result["linear_state_name"]
+        if result.get("linear_state_type"):
+            self._issue["state_type"] = result["linear_state_type"]
+        try:
+            self.query_one("#detail-text", Static).update(self._render_text())
+        except Exception:
+            pass
 
     def action_close(self) -> None:
         self.app.pop_screen()

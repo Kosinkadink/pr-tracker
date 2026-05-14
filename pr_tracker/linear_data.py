@@ -159,6 +159,45 @@ def fetch_my_linear_issues(
     return fetch_linear_issues(assignee_id=user_id, states=states, first=first)
 
 
+def fetch_linear_states_for_identifiers(
+    identifiers: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Bulk-fetch state info for a list of Linear identifiers.
+
+    Returns a map ``{identifier → {state_name, state_type, assignee, url, title}}``.
+    Missing identifiers are simply omitted from the result.
+
+    Returns an empty dict if no token is configured or the API call fails —
+    callers should treat absence of an entry as "unknown".
+    """
+    if not identifiers:
+        return {}
+    # De-dupe + uppercase
+    wanted = sorted({i.upper() for i in identifiers if i})
+    if not wanted:
+        return {}
+    try:
+        raw = linear_api.fetch_issues_by_identifiers(wanted)
+    except Exception:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for raw_issue in raw:
+        ident = (raw_issue.get("identifier") or "").upper()
+        if not ident:
+            continue
+        state = raw_issue.get("state") or {}
+        assignee = raw_issue.get("assignee") or {}
+        out[ident] = {
+            "state_name": state.get("name", ""),
+            "state_type": state.get("type", ""),
+            "state_color": state.get("color", ""),
+            "assignee": assignee.get("displayName", "") or assignee.get("name", ""),
+            "url": raw_issue.get("url", ""),
+            "title": raw_issue.get("title", ""),
+        }
+    return out
+
+
 def fetch_linear_issue_detail(identifier: str) -> dict[str, Any] | None:
     """Fetch a single Linear issue by identifier with full detail."""
     detail = linear_api.fetch_issue_detail_by_identifier(identifier)
@@ -203,4 +242,100 @@ def extract_linear_identifier(branch_name: str) -> str | None:
     if m:
         return f"{m.group(1)}-{m.group(2)}"
     return None
+
+
+# ---------------------------------------------------------------------------
+# Auto-injection: ensure GitHub PR body contains "Fixes DESK2-N"
+# ---------------------------------------------------------------------------
+
+# Linear's GitHub bot recognises any of these closing-keyword patterns.
+# We use "Fixes" by convention so it's grep-able in PR descriptions.
+_LINEAR_FIXES_RE = re.compile(
+    r"(?:closes|fixes|resolves|fix|close|resolve)\s+([A-Z][A-Z0-9]{1,9}-\d+)",
+    re.IGNORECASE,
+)
+
+_AUTO_INJECT_MARKER = "<!-- pr-tracker:linear-link -->"
+
+
+def pr_body_has_linear_link(body: str | None, identifier: str) -> bool:
+    """True when *body* already contains a closing-keyword reference to *identifier*.
+
+    Matches things like "Fixes DESK2-42" or "Closes desk2-42".  Also accepts a
+    bare identifier — but only when it stands alone (i.e. not part of a longer
+    token like ``feat/DESK2-42-foo``), so branch references in the body don't
+    cause us to skip injection.
+    """
+    if not body:
+        return False
+    upper_id = identifier.upper()
+    for m in _LINEAR_FIXES_RE.finditer(body):
+        if m.group(1).upper() == upper_id:
+            return True
+    # Standalone identifier — disallow adjacent ``-`` / ``/`` / ``_`` / alphanumerics
+    # so things like "feat/DESK2-42-foo" or "DESK2-420" don't match DESK2-42.
+    standalone_re = re.compile(
+        rf"(?<![A-Za-z0-9/_-]){re.escape(upper_id)}(?![A-Za-z0-9_-])"
+    )
+    return bool(standalone_re.search(body.upper()))
+
+
+def inject_linear_link_into_body(body: str | None, identifier: str) -> str:
+    """Return a new PR body with a ``Fixes DESK2-N`` line appended, idempotently.
+
+    No-ops if the identifier is already present.  When the auto-inject marker
+    block already exists (from a previous identifier injection), the new
+    ``Fixes`` line is merged into that block instead of starting a new one.
+    """
+    upper_id = identifier.upper()
+    body = body or ""
+    if pr_body_has_linear_link(body, upper_id):
+        return body
+
+    # Merge into an existing auto-inject block when present.
+    if _AUTO_INJECT_MARKER in body:
+        lines = body.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip() == _AUTO_INJECT_MARKER:
+                # Walk past consecutive closing-keyword lines belonging to the block.
+                j = i + 1
+                while j < len(lines) and _LINEAR_FIXES_RE.match(lines[j].strip()):
+                    j += 1
+                lines.insert(j, f"Fixes {upper_id}")
+                return "\n".join(lines)
+
+    suffix = f"\n\n{_AUTO_INJECT_MARKER}\nFixes {upper_id}\n"
+    return (body.rstrip() + suffix).lstrip("\n")
+
+
+# ---------------------------------------------------------------------------
+# Source resolution
+# ---------------------------------------------------------------------------
+
+def build_back_comment(identifier: str, url: str) -> str:
+    """Comment body posted back on the source GitHub issue/PR."""
+    return (
+        f"Tracked in Linear: [{identifier}]({url}).\n\n"
+        f"<sub>Auto-posted by pr-tracker.</sub>"
+    )
+
+
+def resolve_priority(value: str | int | None) -> int | None:
+    """Map a CLI priority value to Linear's 0-4 scale."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, int):
+        return value
+    name_map = {
+        "no-priority": 0, "none": 0,
+        "urgent": 1,
+        "high": 2,
+        "medium": 3,
+        "low": 4,
+    }
+    s = str(value).strip().lower()
+    if s.isdigit():
+        n = int(s)
+        return n if 0 <= n <= 4 else None
+    return name_map.get(s)
 

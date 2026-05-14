@@ -25,6 +25,8 @@ class BranchListScreen(GitHubListScreen):
         Binding("D", "deploy_branch", "Deploy"),
         Binding("w", "station_list", "Stations"),
         Binding("W", "create_station", "New Station"),
+        Binding("C", "create_linear", "New Linear"),
+        Binding("M", "move_linear", "Linear State"),
         Binding("q", "quit", "Quit"),
     ]
 

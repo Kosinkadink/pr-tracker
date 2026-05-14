@@ -27,6 +27,7 @@ class IssueListScreen(GitHubListScreen):
         Binding("w", "station_list", "Stations"),
         Binding("W", "create_station", "New Station"),
         Binding("L", "switch_to_linear", "Linear"),
+        Binding("C", "create_linear", "New Linear"),
         Binding("q", "quit", "Quit"),
     ]
 
