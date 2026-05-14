@@ -105,9 +105,18 @@ def _linear_pill_text(pr: dict[str, Any], repo: str | None = None) -> Text:
 
     For merged PRs whose Linear ticket is still in an active state
     (``started`` / ``unstarted``), prefixes a ``⚠ `` mismatch glyph.
+
+    When the PR has a Linear *attachment* but no ``DESK2-N`` reference in
+    branch/title/body, renders a yellow ``⚠ DESK2-N (no ref)`` warning so the
+    user can either add the ``Fixes`` line or accept the attachment-only link.
     """
     ident = pr.get("linear_identifier") or ""
     if not ident:
+        att_ident = pr.get("linear_attachment_identifier") or ""
+        if att_ident:
+            att_state = pr.get("linear_attachment_state_name") or ""
+            label = f"{att_ident} · {att_state}" if att_state else att_ident
+            return Text(f"⚠ {label} (no ref)", style="yellow")
         team = _team_hint_for_repo(repo or pr.get("repo"))
         if team:
             return Text(f"+ {team}?", style="dim yellow")

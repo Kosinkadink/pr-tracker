@@ -198,7 +198,8 @@ class PRListScreen(GitHubListScreen):
 
     def _fetch_items_worker(self, worker, gen: int) -> list[dict]:
         from pr_tracker.data import (
-            apply_cached_enrichment, apply_linear_states, enrich_pr, is_pinned,
+            apply_cached_enrichment, apply_linear_attachments,
+            apply_linear_states, enrich_pr, is_pinned,
         )
         from pr_tracker import github_api
 
@@ -229,6 +230,10 @@ class PRListScreen(GitHubListScreen):
             # follow-up enrichment pass.
             try:
                 apply_linear_states(enriched)
+            except Exception:
+                pass
+            try:
+                apply_linear_attachments(enriched)
             except Exception:
                 pass
 

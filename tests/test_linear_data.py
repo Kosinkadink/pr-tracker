@@ -930,3 +930,164 @@ def test_attachment_title_for_amp_thread():
 
     src = AmpThreadSource(thread_id="T-019e238e-8925-743c-808e-350a3cb34013")
     assert _attachment_title(src) == "Amp thread T-019e238e-8925-743c-808e-350a3cb34013"
+
+
+# ---------------------------------------------------------------------------
+# Linear attachment cross-check (PRs with attachment but no DESK2-N reference)
+# ---------------------------------------------------------------------------
+
+def test_pill_warns_when_attachment_only(monkeypatch):
+    """A PR with no linear_identifier but a linear_attachment_identifier shows
+    a yellow ``⚠ DESK2-N · State (no ref)`` warning pill."""
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {})
+    cell = _linear_pill_text({
+        "linear_identifier": "",
+        "linear_attachment_identifier": "DESK2-77",
+        "linear_attachment_state_name": "In Progress",
+    })
+    assert str(cell) == "⚠ DESK2-77 · In Progress (no ref)"
+    assert "yellow" in str(cell.style)
+
+
+def test_pill_warns_when_attachment_only_without_state(monkeypatch):
+    """No state info → still shows ⚠ identifier (no ref)."""
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {})
+    cell = _linear_pill_text({
+        "linear_identifier": "",
+        "linear_attachment_identifier": "DESK2-77",
+    })
+    assert str(cell) == "⚠ DESK2-77 (no ref)"
+
+
+def test_pill_prefers_linear_identifier_over_attachment(monkeypatch):
+    """When both fields are set, the explicit linear_identifier wins (no warning)."""
+    from pr_tracker import config as cfg
+
+    monkeypatch.setattr(cfg, "load_tracker_config", lambda: {})
+    cell = _linear_pill_text({
+        "linear_identifier": "DESK2-1",
+        "linear_state_name": "Todo",
+        "linear_state_type": "unstarted",
+        "linear_attachment_identifier": "DESK2-77",
+    })
+    assert "no ref" not in str(cell)
+    assert "DESK2-1" in str(cell)
+
+
+def test_apply_linear_attachments_noops_when_no_token(monkeypatch):
+    import pr_tracker.data as data_mod
+
+    monkeypatch.setattr("pr_tracker.config.load_linear_token", lambda: "")
+    prs = [{"url": "https://github.com/x/y/pull/1", "linear_identifier": ""}]
+    data_mod.apply_linear_attachments(prs)
+    assert "linear_attachment_identifier" not in prs[0]
+
+
+def test_apply_linear_attachments_skips_prs_with_identifier(monkeypatch):
+    """PRs that already have linear_identifier must NOT be queried."""
+    import pr_tracker.data as data_mod
+
+    monkeypatch.setattr("pr_tracker.config.load_linear_token", lambda: "tok")
+    calls = {"urls": None}
+    def fake_fetch(urls):
+        calls["urls"] = urls
+        return {}
+    monkeypatch.setattr(
+        "pr_tracker.linear_api.fetch_attachment_issues_for_urls", fake_fetch,
+    )
+    prs = [
+        {"url": "https://github.com/x/y/pull/1", "linear_identifier": "DESK2-1"},
+        {"url": "https://github.com/x/y/pull/2", "linear_identifier": ""},
+    ]
+    data_mod.apply_linear_attachments(prs)
+    assert calls["urls"] == ["https://github.com/x/y/pull/2"]
+
+
+def test_apply_linear_attachments_populates_fields(monkeypatch):
+    """When the API returns an issue, the linear_attachment_* fields land on the PR."""
+    import pr_tracker.data as data_mod
+
+    monkeypatch.setattr("pr_tracker.config.load_linear_token", lambda: "tok")
+    monkeypatch.setattr(
+        "pr_tracker.linear_api.fetch_attachment_issues_for_urls",
+        lambda urls: {
+            "https://github.com/x/y/pull/2": {
+                "identifier": "DESK2-77",
+                "title": "Manually attached",
+                "url": "https://linear.app/x/issue/DESK2-77",
+                "state": {"name": "In Progress", "type": "started", "color": "#ff0"},
+            },
+        },
+    )
+    prs = [
+        {"url": "https://github.com/x/y/pull/1", "linear_identifier": "DESK2-1"},
+        {"url": "https://github.com/x/y/pull/2", "linear_identifier": ""},
+        {"url": "https://github.com/x/y/pull/3", "linear_identifier": ""},
+    ]
+    data_mod.apply_linear_attachments(prs)
+    # Identifier-bearing PR is untouched
+    assert "linear_attachment_identifier" not in prs[0]
+    # Match populates fields
+    assert prs[1]["linear_attachment_identifier"] == "DESK2-77"
+    assert prs[1]["linear_attachment_state_name"] == "In Progress"
+    assert prs[1]["linear_attachment_state_type"] == "started"
+    assert prs[1]["linear_attachment_url"].endswith("DESK2-77")
+    # Non-match leaves the PR untouched
+    assert "linear_attachment_identifier" not in prs[2]
+
+
+def test_apply_linear_attachments_skips_when_no_candidates(monkeypatch):
+    """Every PR has an identifier → no API call is made."""
+    import pr_tracker.data as data_mod
+
+    monkeypatch.setattr("pr_tracker.config.load_linear_token", lambda: "tok")
+    calls = {"count": 0}
+    def boom(_urls):
+        calls["count"] += 1
+        return {}
+    monkeypatch.setattr(
+        "pr_tracker.linear_api.fetch_attachment_issues_for_urls", boom,
+    )
+    prs = [{"url": "https://github.com/x/y/pull/1", "linear_identifier": "DESK2-1"}]
+    data_mod.apply_linear_attachments(prs)
+    assert calls["count"] == 0
+
+
+def test_fetch_attachment_issues_for_urls_empty_input():
+    from pr_tracker import linear_api
+
+    assert linear_api.fetch_attachment_issues_for_urls([]) == {}
+    assert linear_api.fetch_attachment_issues_for_urls(["", None]) == {}
+
+
+def test_fetch_attachment_issues_for_urls_maps_aliases(monkeypatch):
+    """The aliased GraphQL response must be flattened to ``{url → issue}``."""
+    from pr_tracker import linear_api
+
+    captured = {}
+    def fake_query(query, variables=None, cache_key=""):
+        captured["variables"] = variables
+        # Simulate a response: a0 has a match, a1 has none
+        return {
+            "a0": {"nodes": [{
+                "url": "https://github.com/x/y/pull/1",
+                "issue": {"identifier": "DESK2-1", "state": {"name": "Todo"}},
+            }]},
+            "a1": {"nodes": []},
+        }
+    monkeypatch.setattr(linear_api, "_query", fake_query)
+
+    out = linear_api.fetch_attachment_issues_for_urls([
+        "https://github.com/x/y/pull/1",
+        "https://github.com/x/y/pull/2",
+    ])
+    assert "https://github.com/x/y/pull/1" in out
+    assert out["https://github.com/x/y/pull/1"]["identifier"] == "DESK2-1"
+    assert "https://github.com/x/y/pull/2" not in out
+    # Verify variables were keyed correctly
+    assert captured["variables"]["u0"] == "https://github.com/x/y/pull/1"
+    assert captured["variables"]["u1"] == "https://github.com/x/y/pull/2"

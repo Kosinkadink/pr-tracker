@@ -518,6 +518,48 @@ def apply_linear_states(prs: list[dict[str, Any]]) -> None:
         pr["linear_title"] = info.get("title", "")
 
 
+def apply_linear_attachments(prs: list[dict[str, Any]]) -> None:
+    """Detect Linear issues that attach a PR's URL but where the PR itself
+    lacks any ``DESK2-N`` reference in branch/title/body.
+
+    Sets ``linear_attachment_*`` fields on those PRs (distinct from
+    ``linear_*`` so the pill renderer can show a warning glyph).  PRs that
+    already have a ``linear_identifier`` are skipped.
+
+    Cheap no-op when no token is configured or no PRs need a lookup.
+    Failures are silently ignored — callers should treat absence as unknown.
+    """
+    from .config import load_linear_token
+    from . import linear_api
+
+    if not load_linear_token():
+        return
+    candidates = [
+        pr for pr in prs
+        if not pr.get("linear_identifier") and pr.get("url")
+    ]
+    if not candidates:
+        return
+    urls = [pr["url"] for pr in candidates]
+    try:
+        lookup = linear_api.fetch_attachment_issues_for_urls(urls)
+    except Exception:
+        return
+    if not lookup:
+        return
+    for pr in candidates:
+        issue = lookup.get(pr.get("url", ""))
+        if not issue:
+            continue
+        state = issue.get("state") or {}
+        pr["linear_attachment_identifier"] = issue.get("identifier", "")
+        pr["linear_attachment_state_name"] = state.get("name", "") if isinstance(state, dict) else ""
+        pr["linear_attachment_state_type"] = state.get("type", "") if isinstance(state, dict) else ""
+        pr["linear_attachment_state_color"] = state.get("color", "") if isinstance(state, dict) else ""
+        pr["linear_attachment_url"] = issue.get("url", "")
+        pr["linear_attachment_title"] = issue.get("title", "")
+
+
 def filter_prs_by_linear(
     prs: list[dict[str, Any]],
     *,
@@ -738,6 +780,7 @@ def fetch_pr_list(
     # Bulk-fetch Linear states for every PR with a linkage (single API call).
     all_prs = [p for grp in results for p in grp.get("prs", [])]
     apply_linear_states(all_prs)
+    apply_linear_attachments(all_prs)
 
     # Apply Linear filters per group
     if linear_state or no_linear:

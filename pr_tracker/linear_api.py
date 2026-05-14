@@ -276,6 +276,56 @@ def fetch_issue_by_identifier(identifier: str) -> dict | None:
     return nodes[0] if nodes else None
 
 
+def fetch_attachment_issues_for_urls(urls: list[str]) -> dict[str, dict]:
+    """Look up Linear issues attached to each URL via ``attachmentsForURL``.
+
+    Returns ``{url → issue_dict}`` for URLs that have at least one attachment.
+    URLs without an attachment are simply omitted from the result.  When
+    multiple Linear issues attach the same URL the first one returned by the
+    API wins (deterministic enough for our warning glyph).
+
+    Batches all lookups into a single GraphQL request via field aliases so we
+    don't fan out to N HTTP calls per repo.  Returns an empty dict when no
+    token is configured or the API call fails.
+    """
+    if not urls:
+        return {}
+    # De-dupe while preserving order
+    seen: dict[str, None] = {}
+    for u in urls:
+        if u and u not in seen:
+            seen[u] = None
+    unique = list(seen.keys())
+    if not unique:
+        return {}
+
+    var_decls = ", ".join(f"$u{i}: String!" for i in range(len(unique)))
+    aliased = "\n".join(
+        f'        a{i}: attachmentsForURL(url: $u{i}) {{ '
+        f'nodes {{ url issue {{ {_ISSUE_FIELDS} }} }} '
+        f'}}'
+        for i in range(len(unique))
+    )
+    query = f"query({var_decls}) {{\n{aliased}\n}}"
+    variables = {f"u{i}": u for i, u in enumerate(unique)}
+
+    cache_key = "attachments_for_urls_" + "_".join(sorted(unique))
+    try:
+        result = _query(query, variables, cache_key=cache_key)
+    except Exception:
+        return {}
+
+    out: dict[str, dict] = {}
+    for i, url in enumerate(unique):
+        nodes = (result.get(f"a{i}") or {}).get("nodes", []) or []
+        for node in nodes:
+            issue = node.get("issue") or {}
+            if issue.get("identifier"):
+                out[url] = issue
+                break
+    return out
+
+
 def fetch_issue_detail(issue_id: str) -> dict | None:
     """Fetch a single issue by ID with comments."""
     query = f"""
