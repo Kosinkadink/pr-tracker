@@ -276,6 +276,9 @@ def fetch_issue_by_identifier(identifier: str) -> dict | None:
     return nodes[0] if nodes else None
 
 
+_ATTACHMENTS_BATCH_SIZE = 50
+
+
 def fetch_attachment_issues_for_urls(urls: list[str]) -> dict[str, dict]:
     """Look up Linear issues attached to each URL via ``attachmentsForURL``.
 
@@ -284,9 +287,10 @@ def fetch_attachment_issues_for_urls(urls: list[str]) -> dict[str, dict]:
     multiple Linear issues attach the same URL the first one returned by the
     API wins (deterministic enough for our warning glyph).
 
-    Batches all lookups into a single GraphQL request via field aliases so we
-    don't fan out to N HTTP calls per repo.  Returns an empty dict when no
-    token is configured or the API call fails.
+    Batches lookups via field aliases (default 50 URLs per request) to keep
+    the GraphQL query complexity bounded while still avoiding N HTTP calls
+    per repo.  Returns an empty dict when no token is configured or the API
+    call fails for every batch.
     """
     if not urls:
         return {}
@@ -299,24 +303,38 @@ def fetch_attachment_issues_for_urls(urls: list[str]) -> dict[str, dict]:
     if not unique:
         return {}
 
-    var_decls = ", ".join(f"$u{i}: String!" for i in range(len(unique)))
+    out: dict[str, dict] = {}
+    for start in range(0, len(unique), _ATTACHMENTS_BATCH_SIZE):
+        batch = unique[start:start + _ATTACHMENTS_BATCH_SIZE]
+        out.update(_fetch_attachment_issues_batch(batch))
+    return out
+
+
+def _fetch_attachment_issues_batch(batch: list[str]) -> dict[str, dict]:
+    """Single aliased GraphQL request for one bounded batch of URLs."""
+    import hashlib
+
+    var_decls = ", ".join(f"$u{i}: String!" for i in range(len(batch)))
     aliased = "\n".join(
         f'        a{i}: attachmentsForURL(url: $u{i}) {{ '
         f'nodes {{ url issue {{ {_ISSUE_FIELDS} }} }} '
         f'}}'
-        for i in range(len(unique))
+        for i in range(len(batch))
     )
     query = f"query({var_decls}) {{\n{aliased}\n}}"
-    variables = {f"u{i}": u for i, u in enumerate(unique)}
+    variables = {f"u{i}": u for i, u in enumerate(batch)}
 
-    cache_key = "attachments_for_urls_" + "_".join(sorted(unique))
+    # Hash the URL set so the cache filename stays a fixed length regardless
+    # of how many (or how long) URLs are in the batch.
+    digest = hashlib.md5("\n".join(sorted(batch)).encode("utf-8")).hexdigest()
+    cache_key = f"attachments_for_urls_{digest}"
     try:
         result = _query(query, variables, cache_key=cache_key)
     except Exception:
         return {}
 
     out: dict[str, dict] = {}
-    for i, url in enumerate(unique):
+    for i, url in enumerate(batch):
         nodes = (result.get(f"a{i}") or {}).get("nodes", []) or []
         for node in nodes:
             issue = node.get("issue") or {}

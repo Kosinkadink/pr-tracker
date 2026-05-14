@@ -1064,6 +1064,40 @@ def test_fetch_attachment_issues_for_urls_empty_input():
     assert linear_api.fetch_attachment_issues_for_urls(["", None]) == {}
 
 
+def test_fetch_attachment_issues_for_urls_chunks_large_batches(monkeypatch):
+    """More than _ATTACHMENTS_BATCH_SIZE URLs → multiple GraphQL requests."""
+    from pr_tracker import linear_api
+
+    calls: list[int] = []
+    def fake_query(query, variables=None, cache_key=""):
+        # Each request batch shows up as len(variables) URL params
+        calls.append(len(variables or {}))
+        return {}
+    monkeypatch.setattr(linear_api, "_query", fake_query)
+    monkeypatch.setattr(linear_api, "_ATTACHMENTS_BATCH_SIZE", 10)
+
+    urls = [f"https://github.com/x/y/pull/{i}" for i in range(25)]
+    linear_api.fetch_attachment_issues_for_urls(urls)
+    assert calls == [10, 10, 5]
+
+
+def test_fetch_attachment_issues_for_urls_uses_hashed_cache_key(monkeypatch):
+    """Cache key must be a fixed-length hash, not the raw concatenated URLs."""
+    from pr_tracker import linear_api
+
+    captured = {}
+    def fake_query(query, variables=None, cache_key=""):
+        captured["cache_key"] = cache_key
+        return {}
+    monkeypatch.setattr(linear_api, "_query", fake_query)
+
+    urls = [f"https://github.com/some/very-long-repo-name/pull/{i}" for i in range(20)]
+    linear_api.fetch_attachment_issues_for_urls(urls)
+    # md5 hex digest is 32 chars; with the prefix the whole key stays short.
+    assert captured["cache_key"].startswith("attachments_for_urls_")
+    assert len(captured["cache_key"]) <= 64
+
+
 def test_fetch_attachment_issues_for_urls_maps_aliases(monkeypatch):
     """The aliased GraphQL response must be flattened to ``{url → issue}``."""
     from pr_tracker import linear_api
