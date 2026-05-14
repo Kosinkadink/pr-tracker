@@ -139,6 +139,19 @@ class IssueListScreen(GitHubListScreen):
                 self._repo_groups.append({"repo": repo, "issues": [], "error": str(e)})
                 continue
 
+            # Dedup by issue number — paginated GitHub responses sorted by
+            # `updated desc` can include the same issue twice if it shifts
+            # between pages mid-pagination.
+            seen_nums: set[int] = set()
+            unique_issues = []
+            for issue in raw_issues:
+                num = issue.get("number")
+                if num is None or num in seen_nums:
+                    continue
+                seen_nums.add(num)
+                unique_issues.append(issue)
+            raw_issues = unique_issues
+
             enriched = []
             for issue in raw_issues:
                 if worker.is_cancelled:

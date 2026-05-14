@@ -216,6 +216,19 @@ class PRListScreen(GitHubListScreen):
                 self._repo_groups.append({"repo": repo, "prs": [], "error": str(e)})
                 continue
 
+            # Dedup by PR number — GitHub's paginated /pulls sorted by
+            # `updated desc` can return the same PR on consecutive pages
+            # if it's updated mid-pagination.
+            seen_nums: set[int] = set()
+            unique_prs = []
+            for p in raw_prs:
+                num = p.get("number")
+                if num is None or num in seen_nums:
+                    continue
+                seen_nums.add(num)
+                unique_prs.append(p)
+            raw_prs = unique_prs
+
             enriched = []
             for p in raw_prs:
                 if worker.is_cancelled:
