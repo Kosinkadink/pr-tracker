@@ -336,10 +336,11 @@ class LinearCreateScreen(StyledModalScreen[dict | None]):
         # effects apply.
         sources_kwargs: dict = {}
         number = item.get("number")
+        fetched = {"title": item.get("title", ""), "body": item.get("body", "")}
         if kind == "pr" and number:
-            sources_kwargs["pr_source"] = GitHubPRSource(repo=repo, number=number)
+            sources_kwargs["pr_source"] = GitHubPRSource(repo=repo, number=number, fetched=fetched)
         elif kind == "issue" and number:
-            sources_kwargs["issue_source"] = GitHubIssueSource(repo=repo, number=number)
+            sources_kwargs["issue_source"] = GitHubIssueSource(repo=repo, number=number, fetched=fetched)
         elif kind == "branch":
             sources_kwargs["branch_source"] = BranchSource(repo=repo, branch=item.get("name", ""))
 

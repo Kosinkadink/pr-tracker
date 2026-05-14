@@ -52,7 +52,7 @@ class LinearStatePickerScreen(StyledModalScreen[dict | None]):
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
         Binding("q", "cancel", "Cancel", show=False),
-        *[Binding(key, f"pick_{idx}", label) for idx, (key, _alias, label) in enumerate(_STATE_OPTIONS)],
+        *[Binding(key, f"pick({idx})", label) for idx, (key, _alias, label) in enumerate(_STATE_OPTIONS)],
     ]
 
     def __init__(self, identifier: str, *, current_state: str = "") -> None:
@@ -80,12 +80,8 @@ class LinearStatePickerScreen(StyledModalScreen[dict | None]):
     # Pick actions (one per state option, dispatched by the binding key)
     # ------------------------------------------------------------------
 
-    def action_pick_0(self) -> None: self._pick(0)
-    def action_pick_1(self) -> None: self._pick(1)
-    def action_pick_2(self) -> None: self._pick(2)
-    def action_pick_3(self) -> None: self._pick(3)
-    def action_pick_4(self) -> None: self._pick(4)
-    def action_pick_5(self) -> None: self._pick(5)
+    def action_pick(self, index: int) -> None:
+        self._pick(index)
 
     def _pick(self, index: int) -> None:
         if self._submitting:
