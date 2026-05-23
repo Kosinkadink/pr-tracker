@@ -696,10 +696,20 @@ def cleanup_station(station_id: int) -> None:
 
     for dir_name, _ in NESTED_REPOS:
         nested = station_path / dir_name
-        if _is_repo(nested):
+        if not _is_repo(nested):
+            continue
+        # Discard tracked changes first so `checkout main` doesn't refuse
+        # to switch branches due to "local changes would be overwritten".
+        # Each step is its own try/except — a failure in one (e.g. reset
+        # on a detached/odd state) must not skip the others.
+        for cmd in (
+            ["reset", "--hard", "HEAD"],
+            ["clean", "-fd"],
+            ["checkout", "main"],
+            ["clean", "-fd"],
+        ):
             try:
-                _run_git(["checkout", "main"], cwd=nested)
-                _run_git(["clean", "-fd"], cwd=nested)
+                _run_git(cmd, cwd=nested)
             except subprocess.CalledProcessError:
                 pass
 
