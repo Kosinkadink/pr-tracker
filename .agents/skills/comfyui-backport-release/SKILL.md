@@ -26,7 +26,7 @@ The `Create backport release` job validates **all** of these. Get any wrong and 
 |---|---|
 | PR base | **`master`** — NOT the release branch. The workflow fast-forwards `release/vX.Y` itself; the PR is just the human-review gate against master. |
 | PR head | The backport branch you push (e.g. `backport/v0.22.2-rodin-nodes`). |
-| PR title | **Exactly** `ComfyUI backport release vMAJOR.MINOR.PATCH (patch version bump)` — no extra spaces, no different casing. |
+| PR title | **Exactly** `ComfyUI backport release vMAJOR.MINOR.PATCH` — no extra spaces, no different casing, no suffix. The workflow does an exact string match against this. |
 | PR state | Open. |
 | Head SHA | Must match the SHA the workflow was dispatched against. Pushing new commits after dispatch invalidates the run. |
 | Source branch lineage | First-parent history must include the latest stable release tag's commit. Branching from `release/vX.Y` works only if that branch tip equals the latest stable tag. |
@@ -112,7 +112,7 @@ Open the PR via API with `base: master` and the exact title:
 
 ```bash
 export GITHUB_TOKEN=$(cat <path-to-githubtoken.txt>)
-TITLE="ComfyUI backport release vMAJOR.MINOR.PATCH (patch version bump)"
+TITLE="ComfyUI backport release vMAJOR.MINOR.PATCH"
 curl -s -X POST \
   -H "Authorization: token $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github+json" \
