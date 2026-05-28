@@ -584,21 +584,27 @@ def reuse_station(
     else:
         progress("No previous repo to reset")
 
+    # 1b. Refresh every nested repo so agents start from latest main.
+    # Without this, an issue-only reuse (or any reuse) leaves the other
+    # ~17 repos at whatever commit they were on when the station was last
+    # touched, which can be weeks stale.
+    progress("Refreshing nested repos")
+    pull_all_branches(station_id, on_progress=None)
+
     # 2. Pull latest on target repo + checkout PR if applicable
     if pr_number and repo:
         sub_dir = get_repo_dir(repo)
         nested_repo_path = station_path / sub_dir
         branch_name = f"pr-{pr_number}"
         if nested_repo_path.exists():
-            # Pull latest main first
-            progress(f"Pulling latest in {sub_dir}")
+            # pull_all_branches above already fetched + fast-forwarded main,
+            # so we only need to land on it before checking out the PR branch.
+            progress(f"Checking out PR #{pr_number} in {sub_dir}")
             try:
                 _run_git(["checkout", "main"], cwd=nested_repo_path)
-                _run_git(["pull", "--ff-only"], cwd=nested_repo_path)
             except subprocess.CalledProcessError:
-                pass  # best-effort pull
+                pass  # best-effort — PR fetch below still works
             # Fetch and checkout PR branch
-            progress(f"Checking out PR #{pr_number} in {sub_dir}")
             try:
                 _run_git(
                     ["fetch", "origin", f"pull/{pr_number}/head:{branch_name}", "--force"],
@@ -839,17 +845,46 @@ def _clone_missing_repos(
     return cloned
 
 
+def _default_branch(repo_path: Path) -> str | None:
+    """Return the name of origin's default branch (e.g. ``main`` or ``master``).
+
+    Reads ``refs/remotes/origin/HEAD``; returns None if unset or git fails.
+    """
+    try:
+        result = _run_git(
+            ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            cwd=repo_path,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    head = result.stdout.strip()
+    # Format: "origin/main"
+    prefix = "origin/"
+    if head.startswith(prefix):
+        return head[len(prefix):]
+    return None
+
+
 def pull_all_branches(
     station_id: int,
     *,
     on_progress: ProgressCallback | None = None,
 ) -> list[str]:
-    """Pull latest on every nested repo's current branch.
+    """Refresh every nested repo so its default branch matches origin.
+
+    For each nested repo:
+    1. ``git fetch origin`` so all remote-tracking refs are current.
+    2. If the current branch is the default branch, ``git pull --ff-only``.
+    3. Otherwise also try ``git fetch origin <default>:<default>`` so the
+       local default ref advances even while a feature/PR branch is checked
+       out. This keeps agents that later branch off main/master from
+       branching off stale history.
 
     Also clones any repos from NESTED_REPOS that are missing (e.g. added
     after the station was created).
 
-    Returns a list of repo names where the pull failed (e.g. branch deleted).
+    Returns a list of repo names where the refresh failed (e.g. fetch or
+    fast-forward declined).
     """
     station = get_station(station_id)
     if not station:
@@ -872,10 +907,43 @@ def pull_all_branches(
         nested = station_path / dir_name
         if on_progress:
             on_progress(f"Pulling {dir_name}…", i, total)
+
+        # Always fetch first so origin/<default> is current even when the
+        # checked-out branch isn't the one being pulled.
+        try:
+            _run_git(["fetch", "origin"], cwd=nested)
+        except (subprocess.CalledProcessError, OSError):
+            failed.append(dir_name)
+            continue
+
+        default = _default_branch(nested)
+        try:
+            current = _run_git(
+                ["rev-parse", "--abbrev-ref", "HEAD"], cwd=nested,
+            ).stdout.strip()
+        except (subprocess.CalledProcessError, OSError):
+            current = ""
+
+        # Fast-forward the currently-checked-out branch when it tracks origin.
         try:
             _run_git(["pull", "--ff-only"], cwd=nested)
         except (subprocess.CalledProcessError, OSError):
             failed.append(dir_name)
+
+        # If we're not sitting on the default branch, also bring the local
+        # default ref up to origin so a later `git checkout <default>` lands
+        # on fresh history. Best-effort — a diverged local default just
+        # means whoever made local commits has to reconcile by hand.
+        if default and current != default:
+            try:
+                _run_git(
+                    ["fetch", "origin", f"{default}:{default}"],
+                    cwd=nested,
+                )
+            except (subprocess.CalledProcessError, OSError):
+                # Non-fast-forward on the unchecked default branch isn't a
+                # show-stopper for activation; leave it as a soft warning.
+                pass
 
     # Re-sync amp skills from nested repos now that we have their latest content.
     _sync_nested_amp_skills(station_path)
