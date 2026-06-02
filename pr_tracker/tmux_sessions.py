@@ -301,6 +301,7 @@ def attach_session(
     name: str,
     *,
     new_terminal: bool = True,
+    force_launch: bool = False,
 ) -> bool:
     """Attach to an existing tmux session.
 
@@ -311,6 +312,12 @@ def attach_session(
 
     If *new_terminal* is False, attaches in the current terminal.
 
+    If *force_launch* is True, always launch a new terminal and ignore
+    the visible-window shortcut.  Callers should pass this when the
+    tmux session was just created — any pre-existing same-title OS
+    window must be an orphan from a previously-killed session and
+    cannot be attached to the fresh session.
+
     Returns True if a session was opened/focused.
     """
     if not has_session(name):
@@ -318,7 +325,7 @@ def attach_session(
 
     try:
         if new_terminal:
-            if not _has_visible_window(name):
+            if force_launch or not _has_visible_window(name):
                 _launch_terminal_with_tmux(name)
             # If window already exists, do nothing — don't steal focus
             # from the TUI (user may be interacting with a prompt dialog).
@@ -446,10 +453,15 @@ def open_station_session(
     if is_new:
         create_session(name, path, windows=windows)
 
+    # If we just created the tmux session, any pre-existing OS window with
+    # title "stationN" must be an orphan — typically a Windows Terminal tab
+    # left over after the previous tmux server was killed (e.g. by
+    # ``reuse_station``).  Force a fresh terminal launch in that case so the
+    # user actually sees the new session.
     if new_window:
-        ok = attach_session(name)
+        ok = attach_session(name, force_launch=is_new)
     else:
-        ok = switch_client(name) or attach_session(name)
+        ok = switch_client(name) or attach_session(name, force_launch=is_new)
 
     return ok, is_new
 
