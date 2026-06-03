@@ -144,19 +144,24 @@ class StationListScreen(Screen):
                 key=str(s["id"]),
             )
 
-        # In-progress creation jobs
+        # In-progress creation / reuse jobs
         active_jobs = 0
+        reuse_jobs = 0
         for job in self.app.creation_jobs:
             if job.done:
                 continue
             active_jobs += 1
+            verb = getattr(job, "verb_lower", "creating")
+            if verb == "reusing":
+                reuse_jobs += 1
             if job.cancelling:
                 status_text = Text("cancelling…", style="red")
             else:
                 progress = f"{job.current_step}/{job.total_steps}" if job.total_steps else "…"
-                status_text = Text(f"creating ({progress})", style="yellow")
+                status_text = Text(f"{verb} ({progress})", style="yellow")
+            id_cell = str(job.station_id) if job.station_id else "…"
             table.add_row(
-                "…",
+                id_cell,
                 job.label,
                 "",
                 status_text,
@@ -169,7 +174,13 @@ class StationListScreen(Screen):
         total = len(stations) + active_jobs
         parts = [f"{len(stations)} station(s)"]
         if active_jobs:
-            parts.append(f"{active_jobs} creating")
+            creating = active_jobs - reuse_jobs
+            sub = []
+            if creating:
+                sub.append(f"{creating} creating")
+            if reuse_jobs:
+                sub.append(f"{reuse_jobs} reusing")
+            parts.append(" · ".join(sub))
         self._set_status(f"  {' · '.join(parts)}")
 
         # Restore cursor position

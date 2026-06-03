@@ -141,11 +141,12 @@ class StationDetailScreen(Screen):
             if last_used:
                 parts.append(f"[bold]Used:[/bold]     {last_used}\n")
 
-        # Job progress (if creating)
+        # Job progress (if creating or reusing)
         job = self._job
         if job:
+            verb = getattr(job, "verb", "Creating")
             if not station:
-                parts.append(f"[bold]Creating station for {escape(job.label)}[/bold]\n")
+                parts.append(f"[bold]{verb} station for {escape(job.label)}[/bold]\n")
                 if job.station_path:
                     parts.append(f"[bold]Path:[/bold]     {escape(job.station_path)}\n")
                 if job.skipped_repos:
@@ -156,7 +157,8 @@ class StationDetailScreen(Screen):
                 if job.error:
                     parts.append(f"\n[red]✗ Error: {escape(job.error)}[/red]\n")
                 else:
-                    parts.append(f"\n[green]✓ Creation complete[/green]\n")
+                    done_word = "Reuse complete" if getattr(job, "kind", "create") == "reuse" else "Creation complete"
+                    parts.append(f"\n[green]✓ {done_word}[/green]\n")
             elif job.cancelling:
                 parts.append(f"\n[red]⏳ Cancelling…[/red]\n")
             else:

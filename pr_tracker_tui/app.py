@@ -24,7 +24,7 @@ def _iter_lines_with_pos(f: IO[str]) -> Iterator[tuple[int, str]]:
 
 @dataclass
 class StationCreationJob:
-    """Tracks an in-progress station creation."""
+    """Tracks an in-progress station creation or reuse."""
 
     label: str
     repo: str | None = None
@@ -43,6 +43,16 @@ class StationCreationJob:
     cancel_event: threading.Event = field(default_factory=threading.Event)
     cancelling: bool = False
     log_lines: list[str] = field(default_factory=list)
+    # "create" for new clones, "reuse" for repurposing an idle station.
+    kind: str = "create"
+
+    @property
+    def verb(self) -> str:
+        return "Reusing" if self.kind == "reuse" else "Creating"
+
+    @property
+    def verb_lower(self) -> str:
+        return "reusing" if self.kind == "reuse" else "creating"
 
     def log(self, msg: str) -> None:
         self.log_lines.append(msg)
@@ -378,10 +388,32 @@ class PRTrackerApp(App):
         extra = {}
         if linear_identifier:
             extra["linear_identifier"] = linear_identifier
-        idle = find_idle_station()
-        if idle:
+
+        # Atomically reserve an idle station so concurrent open-or-create
+        # calls (e.g. user clicks several PRs in a row) each get a distinct
+        # one instead of all racing to reuse the same idle station.  Walk
+        # through idle stations until one is successfully reserved; fall
+        # back to creating a new station if none are available.
+        from pr_tracker.stations import reserve_idle_station
+        reserved_id: int | None = None
+        reserved_ids: set[int] = {
+            job.station_id for job in self.creation_jobs
+            if not job.done and job.station_id is not None
+        }
+        while True:
+            candidate = find_idle_station(exclude_ids=reserved_ids)
+            if not candidate:
+                break
+            cid = candidate["id"]
+            if reserve_idle_station(cid):
+                reserved_id = cid
+                break
+            # Someone else (different thread/process) beat us to it — try next.
+            reserved_ids.add(cid)
+
+        if reserved_id is not None:
             self.reuse_station_background(
-                idle["id"],
+                reserved_id,
                 repo=repo,
                 pr_number=pr_number,
                 issue_number=issue_number,
@@ -550,11 +582,50 @@ class PRTrackerApp(App):
 
         Resets the old repo, pulls latest, checks out the new PR branch,
         and optionally opens terminal tabs on completion.
+
+        A ``StationCreationJob`` (kind="reuse") is registered so the UI
+        shows progress and concurrent ``open_or_create_station`` calls
+        don't try to grab the same station again.
         """
-        self.notify(f"♻️ Reusing station {station_id}…")
+        # Build a human-readable label (mirrors create_station_background).
+        label = f"station {station_id}"
+        if linear_identifier:
+            label = f"Linear {linear_identifier}"
+        elif pr_number and repo:
+            short = repo.split("/", 1)[1] if "/" in repo else repo
+            label = f"{short} PR #{pr_number}"
+        elif issue_number and repo:
+            short = repo.split("/", 1)[1] if "/" in repo else repo
+            label = f"{short} Issue #{issue_number}"
+        elif ref and repo:
+            short = repo.split("/", 1)[1] if "/" in repo else repo
+            label = f"{short} branch {ref}"
+        elif title:
+            label = title
+
+        job = StationCreationJob(
+            label=label,
+            repo=repo,
+            pr_number=pr_number,
+            issue_number=issue_number,
+            ref=ref,
+            linear_identifier=linear_identifier,
+            station_id=station_id,
+            kind="reuse",
+        )
+        self._creation_jobs.append(job)
+        self.notify(f"♻️ Reusing station {station_id} for {label}…")
 
         def _run() -> None:
-            from pr_tracker.stations import reuse_station, update_station, get_station
+            from pr_tracker.stations import (
+                reuse_station, update_station, get_station,
+            )
+
+            def on_progress(msg: str, current: int, total: int) -> None:
+                job.progress_msg = msg
+                job.current_step = current
+                job.total_steps = total
+                job.log(msg)
 
             try:
                 station = reuse_station(
@@ -563,7 +634,9 @@ class PRTrackerApp(App):
                     pr_number=pr_number,
                     issue_number=issue_number,
                     ref=ref,
+                    on_progress=on_progress,
                 )
+                job.station_path = station.get("path")
                 # Store title/body/linear_identifier for prompt presets
                 extra_fields = {}
                 if title:
@@ -574,6 +647,8 @@ class PRTrackerApp(App):
                     extra_fields["linear_identifier"] = linear_identifier
                 if extra_fields:
                     update_station(station["id"], **extra_fields)
+                job.done = True
+                job.progress_msg = f"✓ Done — station{station['id']}"
                 if open_wt_on_complete:
                     try:
                         from pr_tracker_tui.screens.station_activate import activate_and_open_wt
@@ -590,6 +665,14 @@ class PRTrackerApp(App):
                     timeout=10,
                 )
             except Exception as e:
+                # Release the reservation so the station can be picked up again.
+                try:
+                    update_station(station_id, status="idle")
+                except Exception:
+                    pass
+                job.done = True
+                job.error = str(e)
+                job.progress_msg = f"✗ Reuse failed: {e}"
                 self.call_from_thread(
                     self.notify,
                     f"✗ Reuse failed: {e}",
