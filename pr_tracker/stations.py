@@ -140,16 +140,43 @@ def get_station(station_id: int) -> dict | None:
     return None
 
 
-def find_idle_station() -> dict | None:
+def find_idle_station(*, exclude_ids: set[int] | None = None) -> dict | None:
     """Find a station with status 'idle', preferring the lowest ID.
 
     Also discovers unregistered station directories on disk (via
     ``list_stations``) and re-registers them as idle so they can be reused.
+
+    *exclude_ids* lets callers skip station IDs that they have already
+    optimistically reserved for in-flight reuse jobs (defense in depth
+    against the race where the metadata write hasn't landed yet).
     """
+    excluded = exclude_ids or set()
     for s in list_stations():
-        if s.get("status") == "idle":
+        if s.get("status") == "idle" and s.get("id") not in excluded:
             return s
     return None
+
+
+def reserve_idle_station(station_id: int) -> bool:
+    """Atomically flip an idle station to 'preparing' so concurrent callers won't pick it.
+
+    Returns True if the station was idle and is now reserved; False if the
+    station no longer exists or is already in use.
+
+    This closes the race between ``find_idle_station()`` and the background
+    thread that later runs ``reuse_station()`` — without the reservation,
+    multiple PRs/issues opened in quick succession all see the same idle
+    station and start clobbering each other.
+    """
+    data = _load_stations_data()
+    for s in data["stations"]:
+        if s.get("id") == station_id:
+            if s.get("status") != "idle":
+                return False
+            s["status"] = "preparing"
+            _save_stations_data(data)
+            return True
+    return False
 
 
 def _register_orphan_dirs() -> None:
