@@ -29,7 +29,7 @@ NESTED_REPOS: list[tuple[str, str]] = [
     ("ComfyUI_frontend", "https://github.com/Comfy-Org/ComfyUI_frontend.git"),
     ("ComfyUI-Manager", "https://github.com/Comfy-Org/ComfyUI-Manager.git"),
     ("desktop", "https://github.com/Comfy-Org/desktop.git"),
-    ("ComfyUI-Launcher", "https://github.com/Comfy-Org/ComfyUI-Desktop-2.0-Beta.git"),
+    ("ComfyUI-Launcher", "https://github.com/Comfy-Org/Comfy-Desktop.git"),
     ("ComfyUI-Launcher-Environments", "https://github.com/Comfy-Org/ComfyUI-Standalone-Environments.git"),
     ("workflow_templates", "https://github.com/Comfy-Org/workflow_templates.git"),
     ("docs", "https://github.com/Comfy-Org/docs.git"),
@@ -48,13 +48,24 @@ NESTED_REPOS: list[tuple[str, str]] = [
 
 COMFY_VIBE_STATION_REPO = "https://github.com/kosinkadink/comfy-vibe-station.git"
 
+# Repos that were renamed upstream. Existing stations cloned before the rename
+# still point origin at the old URL; ``_migrate_remote_urls`` rewrites them to
+# the new URL during refresh. Keep the old URLs here even after upstream sets up
+# redirects so stale clones get a clean origin.
+RENAMED_REMOTES: list[tuple[str, str]] = [
+    (
+        "https://github.com/Comfy-Org/ComfyUI-Desktop-2.0-Beta.git",
+        "https://github.com/Comfy-Org/Comfy-Desktop.git",
+    ),
+]
+
 # Large repos that should be shallow-cloned (--depth 1) to save time and disk.
 SHALLOW_CLONE_REPOS: set[str] = {"workflow_templates"}
 
 # Default mapping from GitHub repo → subdirectory inside a station.
 DEFAULT_REPO_DIRS: dict[str, str] = {
     "Comfy-Org/ComfyUI": "ComfyUI",
-    "Comfy-Org/ComfyUI-Desktop-2.0-Beta": "ComfyUI-Launcher",
+    "Comfy-Org/Comfy-Desktop": "ComfyUI-Launcher",
     "Comfy-Org/ComfyUI_frontend": "ComfyUI_frontend",
     "Comfy-Org/ComfyUI-Manager": "ComfyUI-Manager",
     "Comfy-Org/desktop": "desktop",
@@ -872,6 +883,59 @@ def _clone_missing_repos(
     return cloned
 
 
+def _normalize_remote(url: str) -> str:
+    """Normalize a git remote URL to ``host/owner/repo`` (lowercase) for comparison.
+
+    Handles https/ssh forms, an optional ``.git`` suffix, and trailing slashes so
+    that, e.g., ``git@github.com:Comfy-Org/Foo.git`` and
+    ``https://github.com/comfy-org/foo`` compare equal.
+    """
+    u = url.strip()
+    u = re.sub(r"\.git$", "", u, flags=re.IGNORECASE).rstrip("/")
+    m = re.match(r"^git@([^:]+):(.+)$", u)
+    if m:
+        u = f"{m.group(1)}/{m.group(2)}"
+    else:
+        u = re.sub(r"^https?://", "", u, flags=re.IGNORECASE)
+    return u.lower()
+
+
+def _migrate_remote_urls(
+    station_path: Path,
+    *,
+    on_progress: ProgressCallback | None = None,
+) -> list[str]:
+    """Rewrite origin remotes for repos that were renamed upstream.
+
+    For each repo in a station whose ``origin`` still matches a known old URL
+    (see ``RENAMED_REMOTES``), set ``origin`` to the new URL. Returns the list
+    of repo dir names that were updated.
+    """
+    old_to_new = {_normalize_remote(old): new for old, new in RENAMED_REMOTES}
+    updated: list[str] = []
+    for dir_name, _ in NESTED_REPOS:
+        nested = station_path / dir_name
+        if not _is_repo(nested):
+            continue
+        try:
+            current = _run_git(
+                ["remote", "get-url", "origin"], cwd=nested,
+            ).stdout.strip()
+        except (subprocess.CalledProcessError, OSError):
+            continue
+        new_url = old_to_new.get(_normalize_remote(current))
+        if not new_url or _normalize_remote(current) == _normalize_remote(new_url):
+            continue
+        if on_progress:
+            on_progress(f"Updating {dir_name} origin URL…", 0, 0)
+        try:
+            _run_git(["remote", "set-url", "origin", new_url], cwd=nested)
+            updated.append(dir_name)
+        except (subprocess.CalledProcessError, OSError):
+            pass  # non-fatal — fetch may still work via upstream redirect
+    return updated
+
+
 def _default_branch(repo_path: Path) -> str | None:
     """Return the name of origin's default branch (e.g. ``main`` or ``master``).
 
@@ -919,6 +983,10 @@ def pull_all_branches(
     station_path = Path(station["path"])
     if not station_path.exists():
         return []
+
+    # Rewrite origin URLs for any repos that were renamed upstream so the
+    # fetches below hit the canonical remote.
+    _migrate_remote_urls(station_path, on_progress=on_progress)
 
     # Clone any repos added since the station was created
     just_cloned = set(_clone_missing_repos(station_path, on_progress=on_progress))

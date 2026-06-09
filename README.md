@@ -140,31 +140,31 @@ Write commands (require `lineartoken.txt` and `linear_teams` in `config/pr-track
 ```bash
 # Create from any combination of sources (or none)
 python pr_tracker.py linear create --team Desktop --title "Spike: investigate X"
-python pr_tracker.py linear create --team Desktop --from-issue Comfy-Org/ComfyUI-Desktop-2.0-Beta#549
-python pr_tracker.py linear create --team Desktop --from-pr Comfy-Org/ComfyUI-Desktop-2.0-Beta#540 --state in-progress
-python pr_tracker.py linear create --team Desktop --from-branch fix/foo --repo Comfy-Org/ComfyUI-Desktop-2.0-Beta
+python pr_tracker.py linear create --team Desktop --from-issue Comfy-Org/Comfy-Desktop#549
+python pr_tracker.py linear create --team Desktop --from-pr Comfy-Org/Comfy-Desktop#540 --state in-progress
+python pr_tracker.py linear create --team Desktop --from-branch fix/foo --repo Comfy-Org/Comfy-Desktop
 
 # Stack sources, override fields, and preview with --dry-run
 python pr_tracker.py linear create --team Desktop \
-    --from-pr Comfy-Org/ComfyUI-Desktop-2.0-Beta#540 \
-    --from-issue Comfy-Org/ComfyUI-Desktop-2.0-Beta#549 \
+    --from-pr Comfy-Org/Comfy-Desktop#540 \
+    --from-issue Comfy-Org/Comfy-Desktop#549 \
     --priority high --assignee me --dry-run
 
 # Attach a GitHub PR/issue to an existing Linear ticket
-python pr_tracker.py linear link DESK2-42 Comfy-Org/ComfyUI-Desktop-2.0-Beta#540
-python pr_tracker.py linear link DESK2-42 --branch fix/foo --repo Comfy-Org/ComfyUI-Desktop-2.0-Beta
+python pr_tracker.py linear link DESK2-42 Comfy-Org/Comfy-Desktop#540
+python pr_tracker.py linear link DESK2-42 --branch fix/foo --repo Comfy-Org/Comfy-Desktop
 
 # Transition state / comment
 python pr_tracker.py linear move DESK2-42 in-progress
 python pr_tracker.py linear comment DESK2-42 "Pinged the reviewer."
 
 # Bulk catch-up
-python pr_tracker.py linear backfill --repo Comfy-Org/ComfyUI-Desktop-2.0-Beta --team Desktop --prs        # dry-run by default
-python pr_tracker.py linear backfill --repo Comfy-Org/ComfyUI-Desktop-2.0-Beta --team Desktop --prs --apply
+python pr_tracker.py linear backfill --repo Comfy-Org/Comfy-Desktop --team Desktop --prs        # dry-run by default
+python pr_tracker.py linear backfill --repo Comfy-Org/Comfy-Desktop --team Desktop --prs --apply
 
 # Reconcile merged PRs whose Linear ticket didn't auto-close
-python pr_tracker.py linear sync --repo Comfy-Org/ComfyUI-Desktop-2.0-Beta --closed-since 14
-python pr_tracker.py linear sync --repo Comfy-Org/ComfyUI-Desktop-2.0-Beta --closed-since 14 --apply
+python pr_tracker.py linear sync --repo Comfy-Org/Comfy-Desktop --closed-since 14
+python pr_tracker.py linear sync --repo Comfy-Org/Comfy-Desktop --closed-since 14 --apply
 ```
 
 By default, every `create --from-pr` and `link <PR>` flow **edits the linked PR's body** to inject `Fixes DESK2-N`, so Linear's GitHub bot auto-closes the ticket on merge. Pass `--no-pr-edit` to skip that (use when you don't have permission to edit the PR). Idempotent — won't duplicate the line if it's already present.
@@ -247,7 +247,7 @@ Main tracker configuration — tracked repos, pinned items, station settings, an
 {
   "repos": [
     "Comfy-Org/ComfyUI",
-    "Comfy-Org/ComfyUI-Desktop-2.0-Beta"
+    "Comfy-Org/Comfy-Desktop"
   ],
   "pinned": [
     {"repo": "owner/repo", "number": 123, "type": "pr"}
