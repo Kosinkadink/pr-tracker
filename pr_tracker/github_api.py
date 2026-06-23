@@ -45,6 +45,19 @@ def _fetch_raw(url: str) -> tuple[Any, req.Response | None]:
         return cached["data"], resp
 
     if resp.status_code != 200:
+        # Authentication failures (expired/invalid/insufficient-scope token)
+        # must NOT silently fall back to stale cache — otherwise a dead token
+        # looks like "no new data". 403 is only an auth error when it is not a
+        # rate-limit response (rate limits carry x-ratelimit-remaining: 0).
+        is_rate_limited = resp.status_code == 429 or (
+            resp.status_code == 403
+            and resp.headers.get("x-ratelimit-remaining") == "0"
+        )
+        if resp.status_code == 401 or (resp.status_code == 403 and not is_rate_limited):
+            raise RuntimeError(
+                f"HTTP {resp.status_code} (bad credentials - check GITHUB_TOKEN; "
+                "if you just replaced the token, restart pr-tracker)"
+            )
         if cached:
             return cached["data"], None
         msg = f"HTTP {resp.status_code}"
