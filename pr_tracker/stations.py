@@ -615,9 +615,9 @@ def reuse_station(
         progress(f"Resetting {old_dir}")
         if old_path.exists():
             try:
-                _run_git(["checkout", "main"], cwd=old_path)
+                _checkout_default_branch(old_path)
                 _run_git(["clean", "-fd"], cwd=old_path)
-            except subprocess.CalledProcessError:
+            except (subprocess.CalledProcessError, OSError):
                 pass  # best-effort reset
     else:
         progress("No previous repo to reset")
@@ -635,12 +635,13 @@ def reuse_station(
         nested_repo_path = station_path / sub_dir
         branch_name = f"pr-{pr_number}"
         if nested_repo_path.exists():
-            # pull_all_branches above already fetched + fast-forwarded main,
-            # so we only need to land on it before checking out the PR branch.
+            # pull_all_branches above already fetched + fast-forwarded the
+            # default branch, so we only need to land on it before checking out
+            # the PR branch.
             progress(f"Checking out PR #{pr_number} in {sub_dir}")
             try:
-                _run_git(["checkout", "main"], cwd=nested_repo_path)
-            except subprocess.CalledProcessError:
+                _checkout_default_branch(nested_repo_path)
+            except (subprocess.CalledProcessError, OSError):
                 pass  # best-effort — PR fetch below still works
             # Fetch and checkout PR branch
             try:
@@ -742,20 +743,28 @@ def cleanup_station(station_id: int) -> None:
         nested = station_path / dir_name
         if not _is_repo(nested):
             continue
-        # Discard tracked changes first so `checkout main` doesn't refuse
-        # to switch branches due to "local changes would be overwritten".
-        # Each step is its own try/except — a failure in one (e.g. reset
-        # on a detached/odd state) must not skip the others.
-        for cmd in (
-            ["reset", "--hard", "HEAD"],
-            ["clean", "-fd"],
-            ["checkout", "main"],
-            ["clean", "-fd"],
-        ):
-            try:
-                _run_git(cmd, cwd=nested)
-            except subprocess.CalledProcessError:
-                pass
+        # Discard tracked changes first so the default-branch checkout doesn't
+        # refuse to switch due to "local changes would be overwritten". Each
+        # step is its own try/except — a failure in one (e.g. reset on a
+        # detached/odd state) must not skip the others. The checkout resolves
+        # the repo's real default (``master`` for ComfyUI), not a hardcoded
+        # ``main`` that would silently strand it on a stale branch.
+        try:
+            _run_git(["reset", "--hard", "HEAD"], cwd=nested)
+        except (subprocess.CalledProcessError, OSError):
+            pass
+        try:
+            _run_git(["clean", "-fd"], cwd=nested)
+        except (subprocess.CalledProcessError, OSError):
+            pass
+        try:
+            _checkout_default_branch(nested)
+        except (subprocess.CalledProcessError, OSError):
+            pass
+        try:
+            _run_git(["clean", "-fd"], cwd=nested)
+        except (subprocess.CalledProcessError, OSError):
+            pass
 
     update_station(station_id, repo=None, ref=None, pr_number=None,
                    issue_number=None, linear_identifier=None,
@@ -954,6 +963,34 @@ def _default_branch(repo_path: Path) -> str | None:
     if head.startswith(prefix):
         return head[len(prefix):]
     return None
+
+
+def _checkout_default_branch(repo_path: Path) -> None:
+    """Check out the repo's origin default branch (``main`` or ``master``).
+
+    Resolves the real default from ``origin/HEAD`` first — hardcoding ``main``
+    silently strands repos whose default is ``master`` (e.g. ComfyUI) on
+    whatever branch a prior task left checked out. Falls back to ``main`` then
+    ``master`` if ``origin/HEAD`` is unset. Raises the last error if none of
+    the candidates can be checked out, so callers decide whether to swallow it.
+    """
+    candidates: list[str] = []
+    default = _default_branch(repo_path)
+    if default:
+        candidates.append(default)
+    for fallback in ("main", "master"):
+        if fallback not in candidates:
+            candidates.append(fallback)
+
+    last_err: Exception | None = None
+    for branch in candidates:
+        try:
+            _run_git(["checkout", branch], cwd=repo_path)
+            return
+        except (subprocess.CalledProcessError, OSError) as e:
+            last_err = e
+    if last_err:
+        raise last_err
 
 
 def pull_all_branches(
