@@ -188,6 +188,7 @@ class FollowUpScreen(StyledModalScreen["str | _InitiationPrompt | None"]):
         Binding("1", "pick_1", "Work + PR"),
         Binding("2", "pick_2", "Continue"),
         Binding("3", "pick_3", "Review"),
+        Binding("4", "pick_4", "Address comments"),
         Binding("escape", "skip", "Skip"),
         Binding("s", "skip", "Skip"),
         Binding("q", "skip", "Skip", show=False),
@@ -238,6 +239,9 @@ class FollowUpScreen(StyledModalScreen["str | _InitiationPrompt | None"]):
 
     def action_pick_3(self) -> None:
         self._pick(2)
+
+    def action_pick_4(self) -> None:
+        self._pick(3)
 
     def action_skip(self) -> None:
         self.dismiss(None)

@@ -83,6 +83,16 @@ FOLLOWUP_PROMPTS: list[dict[str, str]] = [
         "label": "Code review only",
         "prompt": "Do a code review of the changes.",
     },
+    {
+        "key": "4",
+        "label": "Address review comments + resolve",
+        "prompt": (
+            "Review the PR comments, including any from CodeRabbit and other "
+            "reviewers. Address all actionable comments by making the necessary "
+            "code changes, then commit and push. After each comment is handled, "
+            "reply to it and resolve the conversation."
+        ),
+    },
 ]
 
 
