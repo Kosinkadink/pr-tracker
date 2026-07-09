@@ -440,20 +440,30 @@ class StationListScreen(Screen):
             self.notify("Station is not active", severity="warning")
             return
 
-        from .prompt_preview import FollowUpScreen
-        from .station_activate import _send_prompt_to_amp, _station_title
+        from .prompt_preview import FollowUpScreen, INITIATION_PROMPT
+        from .station_activate import (
+            _has_prompt_preview,
+            _send_prompt_to_amp,
+            _show_prompt_preview,
+            _station_title,
+        )
 
         title = _station_title(station)
+        has_initiation = _has_prompt_preview(station)
 
-        def _on_followup(result: str | None) -> None:
-            if result is not None:
+        def _on_followup(result) -> None:
+            if result is INITIATION_PROMPT:
+                # Re-trigger the premade PR/issue setup flow (recovery path for
+                # when the initiation popup didn't appear on station open).
+                _show_prompt_preview(self, station)
+            elif result is not None:
                 self.run_worker(
                     lambda: _send_prompt_to_amp(self, station, result),
                     thread=True,
                 )
 
         self.app.push_screen(
-            FollowUpScreen(title=title),
+            FollowUpScreen(title=title, has_initiation=has_initiation),
             callback=_on_followup,
         )
 

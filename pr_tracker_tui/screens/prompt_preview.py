@@ -164,10 +164,27 @@ class IssueFlowScreen(StyledModalScreen[str | None]):
             self._on_prompt_chosen(None)
 
 
-class FollowUpScreen(StyledModalScreen[str | None]):
-    """Modal for selecting a follow-up prompt to send to the station's amp window."""
+# Sentinel dismissed by FollowUpScreen when the user chooses to (re)send the
+# station's initiation prompt (the premade PR/issue setup message) instead of a
+# generic follow-up.
+class _InitiationPrompt:
+    """Marker type for the 'send initiation prompt' follow-up option."""
+
+
+INITIATION_PROMPT = _InitiationPrompt()
+
+
+class FollowUpScreen(StyledModalScreen["str | _InitiationPrompt | None"]):
+    """Modal for selecting a follow-up prompt to send to the station's amp window.
+
+    When *has_initiation* is True, an extra ``0`` option is offered that
+    re-triggers the station's initiation prompt (the premade PR/issue setup
+    message).  This is a recovery path for when the initiation popup did not
+    appear on station open (e.g. many stations provisioned at once).
+    """
 
     BINDINGS = [
+        Binding("0", "pick_initiation", "Initiation", show=False),
         Binding("1", "pick_1", "Work + PR"),
         Binding("2", "pick_2", "Continue"),
         Binding("3", "pick_3", "Review"),
@@ -176,9 +193,10 @@ class FollowUpScreen(StyledModalScreen[str | None]):
         Binding("q", "skip", "Skip", show=False),
     ]
 
-    def __init__(self, *, title: str = "") -> None:
+    def __init__(self, *, title: str = "", has_initiation: bool = False) -> None:
         super().__init__()
         self._title = title or "Follow-up Prompt"
+        self._has_initiation = has_initiation
 
     def compose(self) -> ComposeResult:
         from pr_tracker.presets import FOLLOWUP_PROMPTS
@@ -186,6 +204,11 @@ class FollowUpScreen(StyledModalScreen[str | None]):
             f"[bold]{escape(self._title)}[/bold]\n\n"
             "[dim]Send follow-up to Amp:[/dim]\n"
         ]
+        if self._has_initiation:
+            lines.append(
+                "\n[bold]0[/bold]  Send initiation prompt  "
+                "[dim](premade PR/issue setup message)[/dim]"
+            )
         for fp in FOLLOWUP_PROMPTS:
             if len(fp['prompt']) > 60:
                 lines.append(f"\n[bold]{fp['key']}[/bold]  {fp['label']}  [dim]{fp['prompt'][:60]}...[/dim]")
@@ -202,6 +225,10 @@ class FollowUpScreen(StyledModalScreen[str | None]):
             self.dismiss(FOLLOWUP_PROMPTS[index]["prompt"])
         else:
             self.dismiss(None)
+
+    def action_pick_initiation(self) -> None:
+        if self._has_initiation:
+            self.dismiss(INITIATION_PROMPT)
 
     def action_pick_1(self) -> None:
         self._pick(0)
