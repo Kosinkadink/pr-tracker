@@ -93,6 +93,15 @@ FOLLOWUP_PROMPTS: list[dict[str, str]] = [
             "reply to it and resolve the conversation."
         ),
     },
+    {
+        "key": "5",
+        "label": "Merge latest main/master into branch",
+        "prompt": (
+            "Fetch the latest changes and merge the upstream default branch "
+            "(main or master) into our current branch. Resolve any merge "
+            "conflicts, then commit and push."
+        ),
+    },
 ]
 
 
