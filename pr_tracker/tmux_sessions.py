@@ -455,7 +455,7 @@ def open_station_session(
 
     if is_new:
         create_session(name, path, windows=windows)
-    else:
+    elif sys.platform == "win32":
         # Repair existing psmux sessions when reopened.  Older sessions may
         # predate the latest Windows scroll/copy-mode workarounds, and psmux
         # keeps those options as live session/server state until normalized.
