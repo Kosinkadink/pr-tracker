@@ -46,7 +46,7 @@ NESTED_REPOS: list[tuple[str, str]] = [
     ("pr-tracker", "https://github.com/Kosinkadink/pr-tracker.git"),
 ]
 
-COMFY_VIBE_STATION_REPO = "https://github.com/kosinkadink/comfy-vibe-station.git"
+COMFY_VIBE_STATION_REPO = "https://github.com/Kosinkadink/comfy-vibe-station.git"
 
 # Repos that were renamed upstream. Existing stations cloned before the rename
 # still point origin at the old URL; ``_migrate_remote_urls`` rewrites them to
