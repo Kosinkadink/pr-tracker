@@ -122,7 +122,7 @@ def _apply_style(session: str) -> None:
         style_cmds.append(["set", "-t", session, "scroll-enter-copy-mode", "off"])
         # Unbind Page Up from entering copy-mode so it passes through to
         # the application running in the pane (e.g. Amp TUI).
-        style_cmds.append(["unbind-key", "-T", "root", "PPage"])
+        style_cmds.append(["-t", session, "unbind-key", "-T", "root", "PPage"])
     for cmd_args in style_cmds:
         _run_tmux(cmd_args, check=False)
 
