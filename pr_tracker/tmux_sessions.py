@@ -102,8 +102,10 @@ def _apply_style(session: str) -> None:
     """Apply neutral dark status bar style to a session.
 
     On Windows, mouse is disabled — psmux intercepts wheel-scroll events
-    for copy mode without checking ``mouse_any_flag`` (unlike real tmux),
-    and doesn't support custom ``WheelUpPane`` bindings to work around it.
+    for copy mode.  psmux also defaults ``scroll-enter-copy-mode`` to on,
+    which lets wheel/PageUp-style scroll paths re-enter copy mode even when
+    mouse support is disabled.  Disable both so scroll/PageUp can pass through
+    to TUIs such as Amp.
     On Linux/macOS, real tmux handles mouse passthrough correctly.
     """
     style_cmds = [
@@ -117,9 +119,10 @@ def _apply_style(session: str) -> None:
     ]
     if sys.platform == "win32":
         style_cmds.append(["set", "-t", session, "mouse", "off"])
+        style_cmds.append(["set", "-t", session, "scroll-enter-copy-mode", "off"])
         # Unbind Page Up from entering copy-mode so it passes through to
         # the application running in the pane (e.g. Amp TUI).
-        style_cmds.append(["unbind-key", "-T", "root", "PPage"])
+        style_cmds.append(["-t", session, "unbind-key", "-T", "root", "PPage"])
     for cmd_args in style_cmds:
         _run_tmux(cmd_args, check=False)
 
@@ -452,6 +455,11 @@ def open_station_session(
 
     if is_new:
         create_session(name, path, windows=windows)
+    elif sys.platform == "win32":
+        # Repair existing psmux sessions when reopened.  Older sessions may
+        # predate the latest Windows scroll/copy-mode workarounds, and psmux
+        # keeps those options as live session/server state until normalized.
+        _apply_style(name)
 
     # If we just created the tmux session, any pre-existing OS window with
     # title "stationN" must be an orphan — typically a Windows Terminal tab

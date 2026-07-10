@@ -35,10 +35,22 @@ if (-not $tmux) {
 if ($tmux) {
     $tmuxBin = $tmux.Source
 
+    function Set-PsmuxScrollWorkaround {
+        param([string]$SessionName)
+        if ($PSVersionTable.PSEdition -eq "Core" -and -not $IsWindows) {
+            return
+        }
+        # psmux defaults scroll/PageUp paths to copy mode.  Keep pr-tracker's
+        # own TUI session from inheriting the same behavior seen in Amp panes.
+        & $tmuxBin set -t $SessionName scroll-enter-copy-mode off 2>$null
+        & $tmuxBin -t $SessionName unbind-key -T root PPage 2>$null
+    }
+
     # Check if "pr-tracker" session already exists
     & $tmuxBin has-session -t pr-tracker 2>$null
     if ($LASTEXITCODE -eq 0) {
         # Session exists — reattach
+        Set-PsmuxScrollWorkaround "pr-tracker"
         & $tmuxBin attach-session -t pr-tracker
     } else {
         # Create detached session (psmux ignores command args on new-session,
@@ -57,6 +69,7 @@ if ($tmux) {
         & $tmuxBin set -t pr-tracker status-left-style "fg=#88aaff,bold" 2>$null
         & $tmuxBin set -t pr-tracker status-right "%H:%M" 2>$null
         & $tmuxBin set -t pr-tracker status-right-style "fg=#888888" 2>$null
+        Set-PsmuxScrollWorkaround "pr-tracker"
 
         # Now attach
         & $tmuxBin attach-session -t pr-tracker
