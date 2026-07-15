@@ -393,12 +393,15 @@ def _launch_terminal_with_tmux(session_name: str) -> None:
             cmd = [
                 wt, "-w", "new", "nt",
                 "--title", session_name,
-                binary, "attach-session", "-t", session_name,
+                # psmux 3.3.6 can discard -t before attach resolves the
+                # session and fall back to last_session.  Positional attach
+                # is supported by psmux and preserves the requested target.
+                binary, "attach", session_name,
             ]
         else:
             cmd = [
                 "cmd", "/c", "start", "",
-                binary, "attach-session", "-t", session_name,
+                binary, "attach", session_name,
             ]
         subprocess.Popen(cmd, env=env)
 
