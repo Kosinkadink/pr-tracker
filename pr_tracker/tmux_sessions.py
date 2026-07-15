@@ -391,7 +391,7 @@ def _launch_terminal_with_tmux(session_name: str) -> None:
         wt = shutil.which("wt")
         if wt:
             cmd = [
-                wt, "nt",
+                wt, "-w", "new", "nt",
                 "--title", session_name,
                 binary, "attach-session", "-t", session_name,
             ]
