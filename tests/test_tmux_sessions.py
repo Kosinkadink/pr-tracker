@@ -3,7 +3,7 @@ from unittest.mock import patch
 from pr_tracker import tmux_sessions
 
 
-def test_windows_terminal_uses_psmux_positional_attach():
+def test_windows_terminal_uses_cross_version_psmux_attach():
     with (
         patch.object(tmux_sessions.sys, "platform", "win32"),
         patch.object(tmux_sessions, "ensure_tmux", return_value=r"C:\psmux\tmux.exe"),
@@ -21,5 +21,7 @@ def test_windows_terminal_uses_psmux_positional_attach():
         "station1",
         r"C:\psmux\tmux.exe",
         "attach",
+        "-t",
+        "station1",
         "station1",
     ]
