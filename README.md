@@ -197,6 +197,35 @@ Stations use tmux sessions for terminal management. Pressing `W` on a PR/issue c
 - **macOS:** `brew install tmux`
 - **Linux:** `sudo apt install tmux`
 
+**tmux options for Amp (Linux/macOS):**
+
+Amp's TUI needs a few tmux options for correct key handling. With tmux defaults, a bare Escape press is held for `escape-time` ms (500 by default) and can appear to never reach Amp, and Shift+Enter collapses into plain Enter because the kitty keyboard protocol is never negotiated.
+
+pr-tracker applies these automatically whenever it creates or reopens a station session (see `_apply_amp_key_compat()` in `pr_tracker/tmux_sessions.py`):
+
+| Option | Purpose |
+|--------|---------|
+| `set -s escape-time 10` | Deliver a bare Escape press immediately instead of after 500 ms |
+| `set -s extended-keys on` | Let Amp negotiate the kitty keyboard protocol through tmux |
+| `set -as terminal-features "xterm*:extkeys"` | Advertise extended-keys support to the outer terminal |
+| `set -g allow-passthrough all` | Pass escape sequences through (inline images, notifications) |
+| `set -ga terminal-features ",*:hyperlinks"` | Clickable OSC 8 hyperlinks in Amp output |
+| `bind -n S-Enter send-keys -l "\x1b[13;2u"` | Shift+Enter inserts a newline in Amp instead of submitting |
+
+These are server/global options, so they affect the whole tmux server the station sessions run on. They are only applied as live server state -- to persist them across tmux server restarts independently of pr-tracker, add the same lines to `~/.tmux.conf`:
+
+```tmux
+# Amp CLI compatibility settings
+set -s escape-time 10
+set -s extended-keys on
+set -as terminal-features "xterm*:extkeys"
+set -g allow-passthrough all
+set -ga terminal-features ",*:hyperlinks"
+bind -n S-Enter send-keys -l "\x1b[13;2u"
+```
+
+Note: `extended-keys` is negotiated when a client attaches, so already-attached terminals may need a detach/reattach (`Ctrl-b d`) to pick it up. Windows/psmux does not implement these options; they are skipped there.
+
 **Key bindings (station list):**
 
 | Key | Action |

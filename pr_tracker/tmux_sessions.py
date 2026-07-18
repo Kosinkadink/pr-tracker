@@ -127,6 +127,48 @@ def _apply_style(session: str) -> None:
         _run_tmux(cmd_args, check=False)
 
 
+def _apply_amp_key_compat() -> None:
+    """Apply tmux options that Amp's TUI needs for correct key handling.
+
+    Linux/macOS only -- psmux (Windows) does not implement these options.
+
+    Without these, tmux holds a bare Escape press for ``escape-time`` ms
+    (default 500) while it waits to disambiguate escape sequences, which
+    makes Escape appear to never reach Amp, and it never negotiates the
+    kitty keyboard protocol, so Shift+Enter collapses into plain Enter.
+
+    These are server/global options, not per-session ones, so they affect
+    the whole tmux server the station sessions run on.  They match what
+    the Amp docs recommend for ~/.tmux.conf and are idempotent, so they
+    are safe no-ops if the user's config already sets them.
+    """
+    if sys.platform == "win32":
+        return
+    compat_cmds = [
+        # Deliver a bare Escape press after 10 ms instead of 500 ms.
+        ["set", "-s", "escape-time", "10"],
+        # Let Amp negotiate the kitty keyboard protocol through tmux.
+        ["set", "-s", "extended-keys", "on"],
+        # Pass escape sequences through to the outer terminal
+        # (inline images, notifications).
+        ["set", "-g", "allow-passthrough", "all"],
+        # Shift+Enter as CSI-u so Amp inserts a newline instead of
+        # submitting the prompt.  The argument contains a real ESC byte.
+        ["bind-key", "-n", "S-Enter", "send-keys", "-l", "\x1b[13;2u"],
+    ]
+    # terminal-features entries are appended (-a), so guard against
+    # stacking duplicates on repeated calls.
+    result = _run_tmux(["show-options", "-s", "terminal-features"], check=False)
+    features = result.stdout or ""
+    if "extkeys" not in features:
+        compat_cmds.append(["set", "-as", "terminal-features", "xterm*:extkeys"])
+    if "hyperlinks" not in features:
+        # Clickable OSC 8 hyperlinks in Amp output.
+        compat_cmds.append(["set", "-ga", "terminal-features", ",*:hyperlinks"])
+    for cmd_args in compat_cmds:
+        _run_tmux(cmd_args, check=False)
+
+
 # ---------------------------------------------------------------------------
 # Session queries
 # ---------------------------------------------------------------------------
@@ -218,8 +260,9 @@ def create_session(
     # Select the amp window so attach shows amp by default.
     _run_tmux(["select-window", "-t", f"{name}:1"], check=False)
 
-    # Apply neutral styling.
+    # Apply neutral styling and Amp key-handling compat options.
     _apply_style(name)
+    _apply_amp_key_compat()
 
 
 def kill_session(name: str) -> bool:
@@ -463,6 +506,10 @@ def open_station_session(
         # predate the latest Windows scroll/copy-mode workarounds, and psmux
         # keeps those options as live session/server state until normalized.
         _apply_style(name)
+    else:
+        # Repair tmux servers whose sessions predate the Amp key-handling
+        # compat options (escape-time, extended-keys, S-Enter binding).
+        _apply_amp_key_compat()
 
     # If we just created the tmux session, any pre-existing OS window with
     # title "stationN" must be an orphan — typically a Windows Terminal tab
