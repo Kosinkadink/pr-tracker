@@ -10,7 +10,7 @@ psmux uses per-session TCP servers with filesystem-based discovery
 ``send-keys``, ``new-window``, ``attach-session``) all work via TCP.
 The only caveat is that ``subprocess.Popen`` must NOT use
 ``DETACHED_PROCESS`` when launching ``wt`` from inside a psmux session
-— it silently prevents the window from appearing.
+- it silently prevents the window from appearing.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def ensure_tmux() -> str:
         _tmux_bin = found
         return found
 
-    # Not found — give install instructions
+    # Not found - give install instructions
     if sys.platform == "win32":
         msg = "tmux not found. Install psmux:  winget install psmux"
     elif sys.platform == "darwin":
@@ -82,7 +82,7 @@ def _run_tmux(
     """
     binary = ensure_tmux()
     cmd = [binary] + args
-    # Force UTF-8 decoding — capture-pane returns Unicode box-drawing
+    # Force UTF-8 decoding - capture-pane returns Unicode box-drawing
     # characters from the amp TUI, and on Windows the default codec
     # (cp1252) raises UnicodeDecodeError on those bytes, leaving stdout
     # as None.  errors="replace" guards against any stray bytes that
@@ -101,11 +101,12 @@ def _run_tmux(
 def _apply_style(session: str) -> None:
     """Apply neutral dark status bar style to a session.
 
-    On Windows, mouse is disabled — psmux intercepts wheel-scroll events
-    for copy mode.  psmux also defaults ``scroll-enter-copy-mode`` to on,
-    which lets wheel/PageUp-style scroll paths re-enter copy mode even when
-    mouse support is disabled.  Disable both so scroll/PageUp can pass through
-    to TUIs such as Amp.
+    On Windows (psmux >= 3.3.7), mouse is enabled: psmux forwards SGR mouse
+    events to panes whose app requests mouse tracking, so scroll/click reach
+    TUIs such as Amp.  psmux's own drag-selection overlay is disabled so the
+    in-pane app handles its own selection, and scroll-enter-copy-mode is off
+    so shell panes scroll psmux scrollback directly instead of entering copy
+    mode.
     On Linux/macOS, real tmux handles mouse passthrough correctly.
     """
     style_cmds = [
@@ -118,7 +119,14 @@ def _apply_style(session: str) -> None:
         ["set", "-t", session, "status-right-style", "fg=#888888"],
     ]
     if sys.platform == "win32":
-        style_cmds.append(["set", "-t", session, "mouse", "off"])
+        # Requires psmux >= 3.3.7: forwards SGR mouse events to panes whose
+        # app enables mouse tracking (e.g. Amp TUI), so scroll/click work
+        # like real tmux.  mouse-selection off stops psmux drawing its own
+        # drag-selection overlay on top of the app's.  scroll-enter-copy-mode
+        # off makes wheel scrolling in plain shell panes scroll psmux
+        # scrollback directly instead of entering copy mode.
+        style_cmds.append(["set", "-t", session, "mouse", "on"])
+        style_cmds.append(["set", "-t", session, "mouse-selection", "off"])
         style_cmds.append(["set", "-t", session, "scroll-enter-copy-mode", "off"])
         # Unbind Page Up from entering copy-mode so it passes through to
         # the application running in the pane (e.g. Amp TUI).
@@ -311,7 +319,7 @@ def _has_visible_window(title: str) -> bool:
     if sys.platform != "win32":
         return False
     try:
-        # Use ctypes to enumerate windows — avoids spawning a process.
+        # Use ctypes to enumerate windows - avoids spawning a process.
         import ctypes
         from ctypes import wintypes
 
@@ -360,7 +368,7 @@ def attach_session(
 
     If *force_launch* is True, always launch a new terminal and ignore
     the visible-window shortcut.  Callers should pass this when the
-    tmux session was just created — any pre-existing same-title OS
+    tmux session was just created - any pre-existing same-title OS
     window must be an orphan from a previously-killed session and
     cannot be attached to the fresh session.
 
@@ -373,7 +381,7 @@ def attach_session(
         if new_terminal:
             if force_launch or not _has_visible_window(name):
                 _launch_terminal_with_tmux(name)
-            # If window already exists, do nothing — don't steal focus
+            # If window already exists, do nothing - don't steal focus
             # from the TUI (user may be interacting with a prompt dialog).
         else:
             binary = ensure_tmux()
@@ -429,7 +437,7 @@ def _launch_terminal_with_tmux(session_name: str) -> None:
     env = _tmux_env()
 
     if sys.platform == "win32":
-        # Do NOT use DETACHED_PROCESS — it prevents wt from opening
+        # Do NOT use DETACHED_PROCESS - it prevents wt from opening
         # a window when launched from inside a psmux session.
         wt = shutil.which("wt")
         if wt:
@@ -493,7 +501,7 @@ def open_station_session(
     the session attached (multi-monitor).  If False and running inside
     tmux, switches the current client in-place (single-monitor).
 
-    Returns ``(ok, is_new)`` — *ok* is True if a session was
+    Returns ``(ok, is_new)`` - *ok* is True if a session was
     opened/attached, *is_new* is True if the session was freshly created.
     """
     name = session_name_for_station(station_id)
@@ -512,7 +520,7 @@ def open_station_session(
         _apply_amp_key_compat()
 
     # If we just created the tmux session, any pre-existing OS window with
-    # title "stationN" must be an orphan — typically a Windows Terminal tab
+    # title "stationN" must be an orphan - typically a Windows Terminal tab
     # left over after the previous tmux server was killed (e.g. by
     # ``reuse_station``).  Force a fresh terminal launch in that case so the
     # user actually sees the new session.
