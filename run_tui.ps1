@@ -40,8 +40,13 @@ if ($tmux) {
         if ($PSVersionTable.PSEdition -eq "Core" -and -not $IsWindows) {
             return
         }
-        # psmux defaults scroll/PageUp paths to copy mode.  Keep pr-tracker's
-        # own TUI session from inheriting the same behavior seen in Amp panes.
+        # Requires psmux >= 3.3.7: mouse on forwards SGR mouse events to the
+        # TUI (scroll/click work like real tmux); mouse-selection off stops
+        # psmux drawing its own drag-selection overlay on top of the app's;
+        # scroll-enter-copy-mode off keeps shell panes scrolling psmux
+        # scrollback directly instead of entering copy mode.
+        & $tmuxBin set -t $SessionName mouse on 2>$null
+        & $tmuxBin set -t $SessionName mouse-selection off 2>$null
         & $tmuxBin set -t $SessionName scroll-enter-copy-mode off 2>$null
         & $tmuxBin -t $SessionName unbind-key -T root PPage 2>$null
     }
@@ -49,7 +54,7 @@ if ($tmux) {
     # Check if "pr-tracker" session already exists
     & $tmuxBin has-session -t pr-tracker 2>$null
     if ($LASTEXITCODE -eq 0) {
-        # Session exists — reattach
+        # Session exists - reattach
         Set-PsmuxScrollWorkaround "pr-tracker"
         & $tmuxBin attach-session -t pr-tracker
     } else {
@@ -75,7 +80,7 @@ if ($tmux) {
         & $tmuxBin attach-session -t pr-tracker
     }
 } else {
-    # No tmux available — run TUI directly (legacy fallback)
+    # No tmux available - run TUI directly (legacy fallback)
     Write-Host "tmux not found. Install psmux: winget install psmux" -ForegroundColor Yellow
     Write-Host "Running TUI directly (no session persistence)..." -ForegroundColor Yellow
     & $python -m pr_tracker_tui @args
