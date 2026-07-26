@@ -38,6 +38,8 @@ NESTED_REPOS: list[tuple[str, str]] = [
     ("comfy-kitchen", "https://github.com/Comfy-Org/comfy-kitchen.git"),
     ("comfy-aimdo", "https://github.com/Comfy-Org/comfy-aimdo.git"),
     ("comfyui-benchmark", "https://github.com/Comfy-Org/comfyui-benchmark.git"),
+    ("Domfy", "https://github.com/Kosinkadink/Domfy.git"),
+    ("Domfy-Frontend", "https://github.com/Kosinkadink/Domfy-Frontend.git"),
     ("ComfyUI-AnimateDiff-Evolved", "https://github.com/Kosinkadink/ComfyUI-AnimateDiff-Evolved.git"),
     ("ComfyUI-Advanced-ControlNet", "https://github.com/Kosinkadink/ComfyUI-Advanced-ControlNet.git"),
     ("ComfyUI-VideoHelperSuite", "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git"),
@@ -69,6 +71,8 @@ DEFAULT_REPO_DIRS: dict[str, str] = {
     "Comfy-Org/ComfyUI_frontend": "ComfyUI_frontend",
     "Comfy-Org/ComfyUI-Manager": "ComfyUI-Manager",
     "Comfy-Org/desktop": "desktop",
+    "Kosinkadink/Domfy": "Domfy",
+    "Kosinkadink/Domfy-Frontend": "Domfy-Frontend",
 }
 
 
