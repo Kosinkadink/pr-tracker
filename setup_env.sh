@@ -5,9 +5,17 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
 
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv "$VENV_DIR"
+if [ ! -x "$VENV_DIR/bin/python" ]; then
+    if [ -d "$VENV_DIR" ]; then
+        echo "Recreating incomplete virtual environment..."
+        python3 -m venv --clear "$VENV_DIR"
+    else
+        echo "Creating virtual environment..."
+        python3 -m venv "$VENV_DIR"
+    fi
+elif ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+    echo "Repairing incomplete virtual environment..."
+    python3 -m venv --upgrade "$VENV_DIR"
 else
     echo "Virtual environment already exists."
 fi
@@ -20,13 +28,13 @@ if [ -f "$SCRIPT_DIR/.gitmodules" ] && [ ! -d "$SUBMODULE_DIR/comfy_runner" ]; t
 fi
 
 echo "Installing dependencies..."
-"$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
+"$VENV_DIR/bin/python" -m pip install --quiet -r "$SCRIPT_DIR/requirements.txt"
 
 # Also install comfy-runner deps if submodule is present
 CR_REQS="$SUBMODULE_DIR/requirements.txt"
 if [ -f "$CR_REQS" ]; then
     echo "Installing comfy-runner dependencies..."
-    "$VENV_DIR/bin/pip" install --quiet -r "$CR_REQS"
+    "$VENV_DIR/bin/python" -m pip install --quiet -r "$CR_REQS"
 fi
 
 # Link comfy-runner into venv so 'import comfy_runner' works
