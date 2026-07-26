@@ -77,6 +77,30 @@ def start_station_runner(station_id: int, path: str) -> str:
     return runner_id_for_station(station_id)
 
 
+def prepare_and_start_station_runner(station_id: int, *, force: bool = False) -> str:
+    """Prepare an idle station if needed, then start its Amp runner.
+
+    Active stations are left exactly as they are. Idle stations use the normal
+    non-forced activation path, which refreshes repositories and synced skills
+    but refuses to reset dirty work unless *force* is True. No interactive tmux
+    session or terminal window is created here.
+    """
+    from .stations import activate_station, get_station
+
+    station = get_station(station_id)
+    if not station:
+        raise RuntimeError(f"Station {station_id} not found")
+    if station.get("status") == "preparing":
+        raise RuntimeError(f"Station {station_id} is already being prepared")
+    if station.get("status") == "idle":
+        station = activate_station(station_id, force=force)
+
+    path = station.get("path")
+    if not path:
+        raise RuntimeError(f"Station {station_id} has no workspace path")
+    return start_station_runner(station_id, path)
+
+
 def stop_station_runner(station_id: int) -> bool:
     """Stop the station's Amp runner.  Returns True if it was running."""
     return tmux_sessions.kill_session(runner_session_name(station_id))

@@ -18,7 +18,7 @@ def toggle_station_runner(screen: Screen, station: dict | None) -> None:
 
     from pr_tracker.amp_runners import (
         is_runner_running,
-        start_station_runner,
+        prepare_and_start_station_runner,
         stop_station_runner,
     )
 
@@ -26,8 +26,52 @@ def toggle_station_runner(screen: Screen, station: dict | None) -> None:
         if is_runner_running(sid):
             stop_station_runner(sid)
             screen.notify(f"Amp runner stopped (station {sid})")
-        else:
-            runner_id = start_station_runner(sid, path)
-            screen.notify(f"Amp runner started: {runner_id}")
+            return
     except Exception as e:
         screen.notify(f"Runner action failed: {e}", severity="error")
+        return
+
+    screen.notify(f"Preparing station {sid} for Amp runner...")
+
+    def _start(*, force: bool = False) -> None:
+        try:
+            runner_id = prepare_and_start_station_runner(sid, force=force)
+        except Exception as e:
+            from pr_tracker.stations import StationDirtyError
+
+            if isinstance(e, StationDirtyError):
+                screen.app.call_from_thread(
+                    _show_dirty_confirm, screen, sid, e.dirty_repos,
+                )
+                return
+            screen.app.call_from_thread(
+                screen.notify, f"Runner action failed: {e}", severity="error",
+            )
+            return
+        screen.app.call_from_thread(
+            screen.notify, f"Amp runner started: {runner_id}",
+        )
+
+    def _show_dirty_confirm(
+        screen: Screen, sid: int, dirty_repos: list[str],
+    ) -> None:
+        from .station_activate import show_dirty_station_confirm
+
+        show_dirty_station_confirm(
+            screen,
+            sid,
+            dirty_repos,
+            on_confirm=lambda: screen.run_worker(
+                lambda: _start(force=True),
+                thread=True,
+                group=f"station-{sid}-runner",
+                exclusive=True,
+            ),
+        )
+
+    screen.run_worker(
+        _start,
+        thread=True,
+        group=f"station-{sid}-runner",
+        exclusive=True,
+    )

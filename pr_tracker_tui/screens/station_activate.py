@@ -46,18 +46,34 @@ def _show_dirty_confirm(
     screen: Screen, sid: int, dirty_repos: list[str], on_done=None,
 ) -> None:
     """Push a ConfirmScreen for dirty repos (must run on main thread)."""
+    show_dirty_station_confirm(
+        screen,
+        sid,
+        dirty_repos,
+        on_confirm=lambda: screen.run_worker(
+            lambda: _force_activate_and_open(screen, sid, on_done),
+            thread=True,
+            group="station-activate",
+            exclusive=True,
+        ),
+    )
+
+
+def show_dirty_station_confirm(
+    screen: Screen,
+    sid: int,
+    dirty_repos: list[str],
+    *,
+    on_confirm,
+) -> None:
+    """Show the shared dirty-station reset confirmation dialog."""
     from .confirm import ConfirmScreen
 
     repos = ", ".join(dirty_repos)
 
-    def _on_confirm(confirmed: bool) -> None:
+    def _on_result(confirmed: bool) -> None:
         if confirmed:
-            screen.run_worker(
-                lambda: _force_activate_and_open(screen, sid, on_done),
-                thread=True,
-                group="station-activate",
-                exclusive=True,
-            )
+            on_confirm()
         else:
             screen.notify("Activation cancelled")
 
@@ -66,7 +82,7 @@ def _show_dirty_confirm(
             f"Station {sid} has uncommitted changes in:\n{repos}\n\n"
             "Reset to default branches and continue? (y/n)"
         ),
-        callback=_on_confirm,
+        callback=_on_result,
     )
 
 

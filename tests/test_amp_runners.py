@@ -52,6 +52,66 @@ def test_start_refuses_when_already_running():
     create.assert_not_called()
 
 
+def test_prepare_and_start_activates_idle_station_without_opening_terminal():
+    station = {"id": 3, "path": "/stations/station3", "status": "idle"}
+    activated = {**station, "status": "active"}
+    with (
+        patch("pr_tracker.stations.get_station", return_value=station),
+        patch("pr_tracker.stations.activate_station", return_value=activated) as activate,
+        patch.object(
+            amp_runners, "start_station_runner", return_value="myhost-station3"
+        ) as start,
+    ):
+        runner_id = amp_runners.prepare_and_start_station_runner(3)
+
+    assert runner_id == "myhost-station3"
+    activate.assert_called_once_with(3, force=False)
+    start.assert_called_once_with(3, "/stations/station3")
+
+
+def test_prepare_and_start_does_not_reinitialize_active_station():
+    station = {"id": 3, "path": "/stations/station3", "status": "active"}
+    with (
+        patch("pr_tracker.stations.get_station", return_value=station),
+        patch("pr_tracker.stations.activate_station") as activate,
+        patch.object(
+            amp_runners, "start_station_runner", return_value="myhost-station3"
+        ) as start,
+    ):
+        runner_id = amp_runners.prepare_and_start_station_runner(3)
+
+    assert runner_id == "myhost-station3"
+    activate.assert_not_called()
+    start.assert_called_once_with(3, "/stations/station3")
+
+
+def test_prepare_and_start_can_force_activation_after_dirty_confirmation():
+    station = {"id": 3, "path": "/stations/station3", "status": "idle"}
+    activated = {**station, "status": "active"}
+    with (
+        patch("pr_tracker.stations.get_station", return_value=station),
+        patch("pr_tracker.stations.activate_station", return_value=activated) as activate,
+        patch.object(
+            amp_runners, "start_station_runner", return_value="myhost-station3"
+        ),
+    ):
+        amp_runners.prepare_and_start_station_runner(3, force=True)
+
+    activate.assert_called_once_with(3, force=True)
+
+
+def test_prepare_and_start_refuses_station_already_being_prepared():
+    station = {"id": 3, "path": "/stations/station3", "status": "preparing"}
+    with (
+        patch("pr_tracker.stations.get_station", return_value=station),
+        patch.object(amp_runners, "start_station_runner") as start,
+    ):
+        with pytest.raises(RuntimeError, match="already being prepared"):
+            amp_runners.prepare_and_start_station_runner(3)
+
+    start.assert_not_called()
+
+
 def test_stop_kills_the_runner_session():
     with patch.object(
         amp_runners.tmux_sessions, "kill_session", return_value=True
