@@ -50,6 +50,21 @@ def _amp_status_line(app, station: dict) -> str:
         return "[dim]○ offline[/dim]"
 
 
+def _runner_status_line(station: dict) -> str:
+    """Return a Rich markup string for the station's Amp runner status."""
+    sid = station.get("id")
+    if not isinstance(sid, int):
+        return "[dim]-[/dim]"
+    try:
+        from pr_tracker.amp_runners import is_runner_running, runner_id_for_station
+
+        if is_runner_running(sid):
+            return f"[magenta]● running  [dim]{escape(runner_id_for_station(sid))}[/dim][/magenta]"
+        return "[dim]○ stopped[/dim]"
+    except Exception:
+        return "[dim]-[/dim]"
+
+
 class StationDetailScreen(Screen):
     """Full-screen station detail view with live progress updates."""
 
@@ -60,6 +75,7 @@ class StationDetailScreen(Screen):
         Binding("W", "switch_to", "Switch To"),
         Binding("g", "open_github", "GitHub"),
         Binding("f", "open_path", "Open folder"),
+        Binding("R", "toggle_runner", "Runner"),
         Binding("X", "station_action", "Cancel / Release"),
     ]
 
@@ -133,6 +149,9 @@ class StationDetailScreen(Screen):
             amp_line = _amp_status_line(self.app, station)
             if amp_line:
                 parts.append(f"[bold]Amp:[/bold]      {amp_line}\n")
+
+            # Amp runner status
+            parts.append(f"[bold]Runner:[/bold]   {_runner_status_line(station)}\n")
 
             created = station.get("created_at", "")
             last_used = station.get("last_used", "")
@@ -259,6 +278,13 @@ class StationDetailScreen(Screen):
             self.notify(f"Opened {path}")
         else:
             self.notify("No station path available yet")
+
+    def action_toggle_runner(self) -> None:
+        """Start/stop the Amp runner for this station."""
+        from .runner_actions import toggle_station_runner
+
+        toggle_station_runner(self, self._station)
+        self._refresh()
 
     def action_station_action(self) -> None:
         """Context-sensitive: cancel creation if in progress, remove station if done."""

@@ -63,6 +63,7 @@ class StationListScreen(Screen):
         Binding("X", "cancel_job", "Cancel"),
         Binding("D", "destroy", "Delete"),
         Binding("f", "followup", "Follow-up"),
+        Binding("R", "toggle_runner", "Runner"),
         Binding("g", "open_path", "Open folder"),
         Binding("escape", "back", "Back"),
         Binding("q", "back", "Back"),
@@ -104,6 +105,15 @@ class StationListScreen(Screen):
             if not job.done and job.station_id is not None
         }
         stations = [s for s in list_stations() if s.get("id") not in active_job_ids]
+
+        # Live tmux sessions, fetched once per refresh to flag Amp runners.
+        from pr_tracker.amp_runners import runner_session_name
+        try:
+            from pr_tracker.tmux_sessions import list_sessions
+            live_sessions = set(list_sessions())
+        except Exception:
+            live_sessions = set()
+
         for s in stations:
             repo = s.get("repo") or "-"
             if "/" in repo:
@@ -130,6 +140,9 @@ class StationListScreen(Screen):
             else:
                 status_cell = Text(status, style="dim")
             amp_cell = _amp_status_cell(self.app, s)
+            if runner_session_name(s.get("id", 0)) in live_sessions:
+                amp_cell = amp_cell.copy()
+                amp_cell.append(" R", style="magenta bold")
             last_used = time_ago(s.get("last_used"))
             path = s.get("path", "?")
 
@@ -466,6 +479,13 @@ class StationListScreen(Screen):
             FollowUpScreen(title=title, has_initiation=has_initiation),
             callback=_on_followup,
         )
+
+    def action_toggle_runner(self) -> None:
+        """Start/stop the Amp runner for the selected station."""
+        from .runner_actions import toggle_station_runner
+
+        toggle_station_runner(self, self._selected_station())
+        self._refresh_table()
 
     def action_open_path(self) -> None:
         import subprocess, sys

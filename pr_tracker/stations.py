@@ -739,6 +739,14 @@ def cleanup_station(station_id: int) -> None:
     except Exception:
         pass
 
+    # Stop the station's Amp runner too - the release below resets every
+    # nested repo under the runner's working directory.
+    try:
+        from .amp_runners import stop_station_runner
+        stop_station_runner(station_id)
+    except Exception:
+        pass
+
     for dir_name, _ in NESTED_REPOS:
         nested = station_path / dir_name
         if not _is_repo(nested):
