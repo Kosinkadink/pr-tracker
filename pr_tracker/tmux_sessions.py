@@ -15,11 +15,14 @@ The only caveat is that ``subprocess.Popen`` must NOT use
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+from safe_file import atomic_write
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +481,44 @@ def _launch_terminal_with_tmux(session_name: str) -> None:
 # Station helpers
 # ---------------------------------------------------------------------------
 
+def _enable_remote_thread_creation(path: str) -> bool:
+    """Enable runner behavior for Amp TUIs launched in *path*.
+
+    Uses Amp's workspace-scoped settings so station sessions become runners
+    without changing the user's global Amp configuration. Existing workspace
+    settings are preserved. The generated file is locally excluded from Git
+    so enabling the runner does not dirty the outer station repository.
+    """
+    workspace = Path(path)
+    settings_path = workspace / ".amp" / "settings.json"
+    try:
+        if settings_path.exists():
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            if not isinstance(settings, dict):
+                return False
+        else:
+            settings = {}
+
+        if settings.get("amp.remoteThreadCreation.enabled") is not True:
+            settings["amp.remoteThreadCreation.enabled"] = True
+            atomic_write(settings_path, json.dumps(settings, indent=2) + "\n")
+
+        exclude_path = workspace / ".git" / "info" / "exclude"
+        if exclude_path.parent.is_dir():
+            entry = ".amp/settings.json"
+            existing = (
+                exclude_path.read_text(encoding="utf-8")
+                if exclude_path.exists()
+                else ""
+            )
+            if entry not in {line.strip() for line in existing.splitlines()}:
+                separator = "" if not existing or existing.endswith("\n") else "\n"
+                atomic_write(exclude_path, f"{existing}{separator}{entry}\n")
+        return True
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
 def session_name_for_station(station_id: int) -> str:
     """Return the tmux session name for a station ID."""
     return f"station{station_id}"
@@ -505,6 +546,7 @@ def open_station_session(
     opened/attached, *is_new* is True if the session was freshly created.
     """
     name = session_name_for_station(station_id)
+    _enable_remote_thread_creation(path)
     is_new = not has_session(name)
 
     if is_new:
