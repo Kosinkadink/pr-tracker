@@ -550,6 +550,17 @@ def open_station_session(
     is_new = not has_session(name)
 
     if is_new:
+        if windows is None:
+            from .amp_runners import interactive_runner_id_for_station
+            from .config import get_amp_command_string
+            runner_id = interactive_runner_id_for_station(station_id)
+            windows = [
+                {"name": "shell", "cmd": None},
+                {
+                    "name": "amp",
+                    "cmd": f"{get_amp_command_string()} --runner-id {runner_id}",
+                },
+            ]
         create_session(name, path, windows=windows)
     elif sys.platform == "win32":
         # Repair existing psmux sessions when reopened.  Older sessions may
