@@ -251,6 +251,19 @@ Note: `extended-keys` is negotiated when a client attaches, so already-attached 
 
 Falls back to native terminal launching (Windows Terminal / gnome-terminal / macOS Terminal) if `terminal_backend` is set to `"native"` in config.
 
+## Shared Amp skills
+
+Reusable Amp skills live in `.agents/skills/` at this repo's root (e.g.
+`delegation-orchestration`). Station roots receive copies at activation
+time, and whenever pr-tracker launches an Amp session (station runner or
+interactive terminal) it also merges this checkout's `.agents/skills`
+directory into the `amp.skills.path` user setting
+(`~/.config/amp/settings.json`), so the skills are visible to every Amp
+session on the machine regardless of working directory. The merge is
+idempotent, only ever replaces path entries ending in
+`pr-tracker/.agents/skills`, preserves all other settings, and skips
+files it cannot parse. See `pr_tracker/amp_settings.py`.
+
 ## Configuration
 
 All config files live in `config/`. Private files are gitignored and must be created manually or copied from a parent workspace.

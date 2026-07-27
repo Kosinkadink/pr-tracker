@@ -1362,6 +1362,12 @@ def open_terminal_tabs(
     if not skip_activate:
         activate_station(station_id)
 
+    # Point this machine's Amp sessions at pr-tracker's shared skills
+    # (amp.skills.path merge; best-effort, never blocks the launch).
+    if amp:
+        from .amp_runners import _ensure_shared_skills
+        _ensure_shared_skills()
+
     title_base = f"Station {station_id}"
     repo = station.get("repo", "")
     pr = station.get("pr_number")

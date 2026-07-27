@@ -52,6 +52,20 @@ def runner_command(station_id: int) -> str:
     return f"amp --no-tui --runner-id {runner_id_for_station(station_id)}"
 
 
+def _ensure_shared_skills() -> None:
+    """Best-effort merge of pr-tracker's skills into amp.skills.path.
+
+    Never blocks or fails a session launch - the skills are a
+    convenience, not a prerequisite.
+    """
+    try:
+        from .amp_settings import ensure_shared_skills_path
+
+        ensure_shared_skills_path()
+    except Exception:
+        pass
+
+
 def is_runner_running(station_id: int) -> bool:
     """Return True if the station's runner tmux session exists.
 
@@ -74,6 +88,7 @@ def start_station_runner(station_id: int, path: str) -> str:
     name = runner_session_name(station_id)
     if tmux_sessions.has_session(name):
         raise RuntimeError(f"runner already running (session {name})")
+    _ensure_shared_skills()
     tmux_sessions.create_session(
         name,
         path,
