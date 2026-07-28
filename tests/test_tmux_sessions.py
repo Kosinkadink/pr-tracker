@@ -32,26 +32,11 @@ def test_open_station_session_enables_remote_thread_creation(tmp_path):
         patch.object(tmux_sessions, "has_session", return_value=False),
         patch.object(tmux_sessions, "create_session") as create,
         patch.object(tmux_sessions, "attach_session", return_value=True),
-        patch(
-            "pr_tracker.amp_runners.interactive_runner_id_for_station",
-            return_value="myhost-station3-tui",
-        ),
-        patch("pr_tracker.config.get_amp_command_string", return_value="amp"),
     ):
         assert tmux_sessions.open_station_session(3, str(tmp_path)) == (True, True)
 
     enable.assert_called_once_with(str(tmp_path))
-    create.assert_called_once_with(
-        "station3",
-        str(tmp_path),
-        windows=[
-            {"name": "shell", "cmd": None},
-            {
-                "name": "amp",
-                "cmd": "amp --runner-id myhost-station3-tui",
-            },
-        ],
-    )
+    create.assert_called_once_with("station3", str(tmp_path), windows=None)
 
 
 def test_windows_terminal_uses_cross_version_psmux_attach():

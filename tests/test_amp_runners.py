@@ -17,15 +17,6 @@ def test_runner_id_falls_back_when_hostname_is_unusable():
         assert amp_runners.runner_id_for_station(3) == "host-station3"
 
 
-def test_interactive_runner_id_is_distinct_and_parseable():
-    with patch.object(amp_runners.socket, "gethostname", return_value="myhost"):
-        assert amp_runners.interactive_runner_id_for_station(3) == "myhost-station3-tui"
-        assert (
-            amp_runners.interactive_runner_id_for_station(3)
-            != amp_runners.runner_id_for_station(3)
-        )
-
-
 def test_runner_session_name_is_distinct_from_interactive_session():
     from pr_tracker.tmux_sessions import session_name_for_station
 

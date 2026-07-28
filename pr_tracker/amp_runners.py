@@ -37,11 +37,6 @@ def runner_id_for_station(station_id: int) -> str:
     return f"{_sanitized_hostname()}-station{station_id}"
 
 
-def interactive_runner_id_for_station(station_id: int) -> str:
-    """Stable runner ID for a station's interactive Amp TUI."""
-    return f"{runner_id_for_station(station_id)}-tui"
-
-
 def runner_session_name(station_id: int) -> str:
     """Return the tmux session name for a station's Amp runner."""
     return f"station{station_id}-runner"
