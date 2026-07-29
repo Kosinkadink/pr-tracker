@@ -130,6 +130,19 @@ Each target repo keeps a durable ledger of its delegations (e.g.
   thread. Fixed station assignments per coordinator prevent two
   coordinators racing one clone; check the target repo's delegation
   ledger for open rows on a station before delegating anywhere new.
+- **Per-delegate clones (delegates folder)** - preferred when slices
+  can run in parallel or a shared station clone would be contended:
+  the prompt directs the delegate to create
+  `stations/<station>/delegates/<slice-id>/` and fresh-clone the
+  target repo inside it (proven by the Domfy-Frontend program, e.g.
+  `station11/delegates/slice63-memoryviz/`). Each delegate owns its
+  clone outright: no tree contention, a known-clean baseline verified
+  against origin/main at start, and parallel delegates on one station
+  stay isolated. Name the folder after the ledger row/slice id.
+  Delegates still sync only through origin (clone from origin, push
+  only where authorized). When the slice settles and its row is
+  closed, the folder is disposable; the delegate or coordinator may
+  remove it, and any folder left behind must be a clean checkout.
 - Stations are independent clones that sync only through origin:
   delegates commit (and, where the repo grants standing authorization,
   push) to origin main; coordinators pull-rebase. A delegate must
