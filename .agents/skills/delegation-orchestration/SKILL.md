@@ -38,7 +38,7 @@ cross-thread contracts.
   organizational metadata only; the runner decides where code executes.
 - A **live runner per station**: an Amp CLI process running in the
   station's workspace root. Runner names derive from hostname + station
-  (e.g. `kosin-x570-aorus-ultra-station14`).
+  (e.g. `kosin-x570-aorus-ultra-station12`).
 
 ## Mechanics
 
