@@ -36,9 +36,11 @@ cross-thread contracts.
   project -> "existing repository"). Without it, `create_thread` fails
   with "Available Amp project refs: none". The project ref is
   organizational metadata only; the runner decides where code executes.
-- A **live runner per station**: an Amp CLI process running in the
-  station's workspace root. Runner names derive from hostname + station
-  (e.g. `kosin-x570-aorus-ultra-station12`).
+- A **live runner on the machine**, started by the user: an Amp CLI
+  process running in a station workspace root there. Runner names
+  derive from hostname + station (e.g.
+  `kosin-x570-aorus-ultra-station12`). One long-lived runner per
+  machine is the norm.
 
 ## Mechanics
 
@@ -54,17 +56,23 @@ cross-thread contracts.
   to the coordinator thread when done or blocked. Never also
   `wait_for_threads` on a thread that was told to reply.
 
-## Sidebar visibility and archival (user-facing tracking)
+## Launch invariants and archival (user-facing tracking)
 
-The user tracks delegation from the Amp TUI sidebar, which shows the
-threads of the session they are watching. Standing directive
-(2026-07-27):
+The user tracks delegation from the Amp TUI sidebar of each machine's
+runner session. Standing directive v2 (2026-07-31), superseding the
+2026-07-27 split-launch model - where this skill and the workspace
+DELEGATION.md disagree, DELEGATION.md wins:
 
-- **Create delegate threads on the coordinator's own station runner**
-  (the session the user watches) so they appear in that sidebar. The
-  runner's working directory does not constrain where work happens:
-  the delegate prompt directs all commands at the delegate station's
-  clone by ABSOLUTE path, so execution still lands in the right tree.
+- **One long-lived runner per machine; a thread runs on the runner of
+  the machine whose files it edits.** Split launches (thread on one
+  machine's runner, work directed at another machine's checkout by
+  absolute path) are ABOLISHED - they made threads invisible to the
+  user. Coordinators spawn delegates on their OWN machine's runner;
+  concurrent threads on one machine use separate local checkouts
+  (per-delegate clones under `stations/<station>/delegates/<slice-id>/`
+  preferred - no reserved delegate stations). Each mission owns one
+  machine and never needs a GPU or quiesce hold from another machine
+  (see the workspace DELEGATION.md fleet map).
 - **Archive settled delegate threads** (`thread_interact` action
   `archive`) once their work is reviewed and their ledger row is
   closed AND the next wave of delegations is starting - the sidebar
@@ -126,10 +134,11 @@ Each target repo keeps a durable ledger of its delegations (e.g.
 
 ## Station etiquette
 
-- Delegate work into a checkout that is **not** in use by another
-  thread. Fixed station assignments per coordinator prevent two
-  coordinators racing one clone; check the target repo's delegation
-  ledger for open rows on a station before delegating anywhere new.
+- Delegate work runs on the coordinator's OWN machine, in a checkout
+  that is **not** in use by another thread. There are NO reserved
+  delegate stations: checkout isolation comes from per-delegate clones
+  (next bullet), not from station assignments. Check the target repo's
+  delegation ledger for open rows before reusing any shared clone.
 - **Per-delegate clones (delegates folder)** - preferred when slices
   can run in parallel or a shared station clone would be contended:
   the prompt directs the delegate to create
