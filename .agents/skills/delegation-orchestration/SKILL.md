@@ -1,173 +1,181 @@
 ---
 name: delegation-orchestration
-description: Coordinator/delegate workflow for multi-thread Amp development - long-lived ultra/high coordinator threads design and review while medium/low delegate threads implement on station runners. Use when orchestrating work across Amp threads, delegating an implementation slice to a runner thread, setting up a delegation ledger, reviewing delegate output, or recovering delegations after an orchestrator thread dies.
+description: Autonomous whole-feature ownership workflow for multi-thread Amp development. Use when assigning or adopting a complete feature and canonical issue, launching machine-local internal delegates or independent reviewers, maintaining issue and PR evidence, verifying merge readiness, or preparing feature-scoped succession.
 ---
 
 # Delegation Orchestration
 
-Proven workflow (2026-07, Domfy backend/inference/frontend programs):
-plan on an expensive tier, implement on a cheap tier, review on the
-expensive tier. Multiple long-lived coordinator threads - one per
-program of work - each delegate implementation to faster/cheaper
-threads. Coordinators never implement slices inline when a delegate
-can; expensive context is spent on design, specs, review, and
-cross-thread contracts.
+One long-running autonomous feature owner owns each complete user-visible
+feature and canonical issue from source discovery through live acceptance.
+Delegation changes execution capacity, not accountability. The workspace
+`DELEGATION.md` and `COORDINATION-POLICY.md` are authoritative when present.
 
-## Roles and tiers
+## Feature-owner contract
 
-- **Coordinator threads** (ultra or high): long-lived, one per program
-  of work. They read roadmaps, plan slices, write delegation specs,
-  review delegate output, and message each other. Their thread IDs are
-  recorded in the target repo's AGENTS.md so peers and successors can
-  find them.
-- **Delegate threads** (medium or low): short-lived, one task each,
-  running on a station runner. They implement exactly what the spec
-  says, reply back with evidence, and end.
-  - `low`: mechanical, bounded tasks - smoke tests, scripted checks,
-    repo state reports.
-  - `medium`: well-specified implementation slices where the design is
-    already decided.
-  - `high`/`ultra`: planning, review, judgment - normally the
-    coordinator itself, not a delegate.
+A complete feature assignment authorizes the owner to:
 
-## One-time prerequisites
+1. Investigate source, tests, history, issue/PR evidence, and runtime behavior.
+2. Revise inherited plans when direct evidence contradicts them, within the
+   accepted feature scope and safety boundaries.
+3. Design and implement across linked repositories through isolated,
+   machine-local work and internal delegates.
+4. Run authorized tests, benchmarks, reproductions, proof, and acceptance.
+5. Commission independent review, fix findings, and verify delegate claims.
+6. Push routine same-repository branches, create/update draft PRs, and maintain
+   canonical issue lifecycle/evidence without repeated approval.
+7. Coordinate separately authorized deployment with the service custodian and
+   own live, visual, physical, and cleanup acceptance.
 
-- An **Amp project** must exist for the repo (ampcode.com -> create
-  project -> "existing repository"). Without it, `create_thread` fails
-  with "Available Amp project refs: none". The project ref is
-  organizational metadata only; the runner decides where code executes.
-- A **live runner on the machine**, started by the user: an Amp CLI
-  process running in a station workspace root there. Runner names
-  derive from hostname + station (e.g.
-  `kosin-x570-aorus-ultra-station12`). One long-lived runner per
-  machine is the norm.
+Routine bootstrap, MATRIX-GO, stage-GO, micro-slice portfolio planning,
+per-stage approval, and progress phone-home are not required. The feature owner
+contacts the integrator or Ops Desk only for a consequential product decision,
+new safety/legal/cost authority, a true external blocker needing coordinator
+action, merge readiness, a deployment incident, or final live completion.
 
-## Mechanics
+Merge, deployment, destructive/shared-infrastructure action, mutation of a
+user-owned service, and new legal or cost authority remain separately
+controlled unless explicitly granted.
 
-- Call `list_runners` immediately before creating a thread - runners
-  are ephemeral; never reuse stale results.
-- `create_thread` with `executor: "runner"`, the `runner_id`, the
-  repo's project ref, and the `agent_mode` for the role.
-- Runner threads execute **locally** on the runner's machine with full
-  access to that machine's checkouts, venvs, and GPUs (an orb is a
-  cloud sandbox that sees none of that - never use orbs for station
-  work).
-- Pick exactly **one** result channel: instruct the delegate to reply
-  to the coordinator thread when done or blocked. Never also
-  `wait_for_threads` on a thread that was told to reply.
+## Role boundaries
 
-## Launch invariants and archival (user-facing tracking)
+- **Feature owner**: owns the complete feature, canonical issue, linked
+  branches/PRs, delegates, reviews, verification, deployment coordination, and
+  live acceptance.
+- **Program integrator**: owns feature assignment/adoption, cross-feature
+  conflicts, independent merge-readiness verification, issue-to-PR evidence
+  reconciliation, and feature succession. It is not a routine delegate router,
+  slice planner, or stage approval queue.
+- **Ops Desk**: is the separate user-facing decision/status surface. It does
+  not code, merge, dispatch routine work, or control machines. It is exempt
+  from time-based rotation.
+- **Machine/service custodian**: controls direct executor identity, GPUs,
+  ports, persistent or user-owned services, and exclusive-resource safety. It
+  does not own routine feature source work.
+- **Internal delegate/reviewer**: works for one feature owner in an isolated
+  machine-local checkout and reports only to that owner through one reply
+  channel with `steer: false`.
 
-The user tracks delegation from the Amp TUI sidebar of each machine's
-runner session. Standing directive v2 (2026-07-31), superseding the
-2026-07-27 split-launch model - where this skill and the workspace
-DELEGATION.md disagree, DELEGATION.md wins:
+## Executor and checkout invariants
 
-- **One long-lived runner per machine; a thread runs on the runner of
-  the machine whose files it edits.** Split launches (thread on one
-  machine's runner, work directed at another machine's checkout by
-  absolute path) are ABOLISHED - they made threads invisible to the
-  user. Coordinators spawn delegates on their OWN machine's runner;
-  concurrent threads on one machine use separate local checkouts
-  (per-delegate clones under `stations/<station>/delegates/<slice-id>/`
-  preferred - no reserved delegate stations). Each mission owns one
-  machine and never needs a GPU or quiesce hold from another machine
-  (see the workspace DELEGATION.md fleet map).
-- **Archive settled delegate threads** (`thread_interact` action
-  `archive`) once their work is reviewed and their ledger row is
-  closed AND the next wave of delegations is starting - the sidebar
-  then shows only current work. Never archive a thread whose row is
-  still open or whose diff has not been reviewed; the ledger row (not
-  the thread's archive state) is the durable record either way.
+Before any repository, service, or process mutation, directly record and
+compare the shell's hostname, primary LAN IP, cwd, and relevant GPU identities
+with the workspace fleet map. Repeat after executor reconnect/replacement or a
+tool-lease/executor change. Runner names, `list_runners`, broker presence, role
+labels, and thread metadata are routing hints, not identity proof.
 
-## Writing the delegation prompt
+Stop on mismatch. Never substitute SSH, a remote filesystem, cross-machine
+checkout, cross-machine runtime dependency, another station, or retired
+machine. Preserve user-reserved resources and custodian authority. Never use
+an orb for station work.
 
-Delegates have zero context from the coordinator's conversation. The
-prompt must be self-contained:
+Concurrent threads use separate local checkouts, preferably fresh clones under
+the station's `delegates/` folder. No owner or delegate mutates another active
+owner's checkout, branch, process, service, port, GPU, or uncommitted artifact.
+There are no cross-machine holds.
 
-1. **Reply contract**: the coordinator thread's ID and the exact
-   evidence the reply must contain - commit hash, pushed or not, exact
-   gate pass counts, measurement outcomes, review findings, deviations
-   from spec.
-2. **Setup**: absolute working directory, expected git baseline
-   (commit hash), pull instruction, environment bootstrap steps. Pull
-   the STATION WORKSPACE ROOT first (the wrapper repo), then the
-   nested target repo - the wrapper carries AGENTS.md and skill
-   updates, and a stale wrapper leaves the delegate without them.
-3. **The design, fully decided**: exact files, APIs, semantics, and
-   edge-case rules. Coordinators design; delegates implement. A prompt
-   that says "figure out the right approach" is a coordinator shirking
-   its job.
-4. **Grounding pointers**: file paths and line ranges for every piece
-   of existing code the design leans on, so the delegate verifies
-   instead of guessing.
-5. **Tests and gates**: what to test, which gate commands must be
-   clean, and the target repo's discipline (its AGENTS.md, ledger
-   rules, review-before-commit).
-6. **Constraints**: what NOT to touch, no new dependencies, ASCII
-   punctuation, any ownership boundaries with other threads.
-7. **Escape hatch**: if the spec contradicts the actual code, stop and
-   reply with the contradiction instead of improvising a different
-   design.
+## Creating an internal delegate or reviewer
 
-## Delegation ledger (durability across coordinator loss)
+Use a delegate only when it gives concrete parallelism or context isolation.
+The feature owner may also implement directly; it chooses decomposition.
 
-Each target repo keeps a durable ledger of its delegations (e.g.
-`docs/DELEGATION-LEDGER.md`), committed and PUSHED on every mutation:
+1. Call `list_runners` immediately before `create_thread`; runner IDs are
+   ephemeral.
+2. Launch on the feature owner's correct local machine runner, never an orb.
+3. Use a separate machine-local checkout and exact public base.
+4. Pick exactly one result channel. Require a reply to the feature owner with
+   `steer: false`; never also call `wait_for_threads` for that worker.
+5. Archive only after the result is independently reconciled and its durable
+   execution record is closed.
 
-1. A row goes in BEFORE the delegate starts (thread ID - use PENDING
-   until `create_thread` returns, then replace and push immediately -
-   one-line task, expected deliverable, status open). A delegation
-   known only to a possibly-dying thread's context is a delegation
-   lost.
-2. On landing, the row flips to `done` with the resulting commit
-   hash(es), pushed. Abandoned or superseded work flips to `abandoned`
-   with a one-line reason. Rows are never deleted.
-3. The CURRENT coordinator thread ID is pinned at the top of the
-   ledger.
-4. Takeover procedure for a successor coordinator: update the pointer
-   (and any peer-facing pointers in AGENTS.md), commit, push FIRST,
-   then check every `open` row via read_thread/preview - delegates
-   reply to the thread that spawned them, so completion messages route
-   to the dead thread and the successor must pull each open delegate's
-   state proactively.
+An independent reviewer is read-only. It receives immutable commit SHAs/ranges,
+exact paths, the canonical issue acceptance contract, and a request for
+concrete actionable findings. It does not fix its own findings unless assigned
+a separate correction task.
 
-## Station etiquette
+## Writing the prompt
 
-- Delegate work runs on the coordinator's OWN machine, in a checkout
-  that is **not** in use by another thread. There are NO reserved
-  delegate stations: checkout isolation comes from per-delegate clones
-  (next bullet), not from station assignments. Check the target repo's
-  delegation ledger for open rows before reusing any shared clone.
-- **Per-delegate clones (delegates folder)** - preferred when slices
-  can run in parallel or a shared station clone would be contended:
-  the prompt directs the delegate to create
-  `stations/<station>/delegates/<slice-id>/` and fresh-clone the
-  target repo inside it (proven by the Domfy-Frontend program, e.g.
-  `station11/delegates/slice63-memoryviz/`). Each delegate owns its
-  clone outright: no tree contention, a known-clean baseline verified
-  against origin/main at start, and parallel delegates on one station
-  stay isolated. Name the folder after the ledger row/slice id.
-  Delegates still sync only through origin (clone from origin, push
-  only where authorized). When the slice settles and its row is
-  closed, the folder is disposable; the delegate or coordinator may
-  remove it, and any folder left behind must be a clean checkout.
-- Stations are independent clones that sync only through origin:
-  delegates commit (and, where the repo grants standing authorization,
-  push) to origin main; coordinators pull-rebase. A delegate must
-  leave its station's tree clean so the next delegation starts from a
-  known state.
+Internal workers have no feature-owner conversation context. Include:
 
-## Review (coordinator, after the delegate reports)
+1. The canonical issue, feature owner thread, bounded outcome, and terminal
+   evidence required in the `steer: false` reply.
+2. Direct executor attestation, absolute local checkout, exact base/branch,
+   public remote, and environment bootstrap.
+3. Source grounding, accepted behavior, safety/resource boundaries, and files
+   or evidence in scope.
+4. Tests, benchmarks, review checks, and exact acceptance criteria.
+5. Explicit non-goals and forbidden actions/resources.
+6. An escape hatch: report a source contradiction rather than silently widen
+   product scope or authority.
 
-Delegate reports are claims, not proof. The coordinator must:
+The feature owner may revise the plan after source discovery without stage
+approval unless a revision crosses an escalation boundary.
 
-- Pull the pushed commit and review the **actual diff**, not the
-  report's summary of it.
-- Verify every API or behavior the new code leans on exists and works
-  as claimed (grep the real code; do not trust the report's citations).
-- **Rerun the gates independently** on the coordinator's own checkout.
-- Confirm ledger/doc updates landed in the same commit per the target
-  repo's discipline.
-- Only then flip the ledger row, archive per the archival rule, and
-  report the slice as done.
+## Durable accountability
+
+Each independently shippable outcome has exactly one canonical issue in its
+owning repository, even when it requires linked PRs in multiple repositories.
+Internal slices, broker topics, priority rows, and delegation ledgers are
+evidence and execution lineage, not competing product parents.
+
+Every issue records the owner, scope/non-goals, dependencies, acceptance, and
+closure evidence, with exactly one lifecycle label: `status: planned`,
+`status: queued`, `status: active`, `status: blocked`, `status: landed`,
+`status: deployed`, or `status: live-verified`.
+
+The owner updates lifecycle and evidence truthfully. Substantive work defaults
+to same-repository branches and PRs. Use `Refs #N` while acceptance remains and
+`Closes #N` only when merge completes all criteria. Planning, delegation,
+review, a commit, or a PR alone does not close an issue.
+
+Where a repository maintains a delegation ledger, record internal execution
+under the feature's canonical issue. Do not create duplicate slice issues
+unless the slice is independently shippable.
+
+## Owner review and integrator gate
+
+Delegate and reviewer reports are claims, not proof. The feature owner:
+
+1. Inspects the actual diff/evidence and verifies referenced contracts.
+2. Reruns applicable checks in its isolated checkout.
+3. Fixes every actionable independent-review finding.
+4. Reviews full diffs against exact public bases and reruns affected/full gates.
+5. Updates draft PRs and the canonical issue with immutable evidence.
+
+At merge readiness, the integrator independently verifies immutable commit
+SHAs and reconciles the issue, linked PRs, review receipt, checks, and remaining
+acceptance. Independent review may gate landing but not unrelated feature work.
+
+## Feature continuity and succession
+
+Prepare a soft handoff at any threshold:
+
+- 600 messages;
+- 2 compactions;
+- 7 active days; or
+- 1 context-loss incident.
+
+Soft preparation inventories the canonical issue, owner generation, inbox and
+decisions, branches/commits/PRs, checkouts, delegates/reviewers,
+services/resources, tests/evidence, uncommitted artifacts, blockers, and next
+acceptance action. It does not automatically rotate a healthy owner.
+
+Feature-scoped succession is mandatory at any threshold:
+
+- 1,200 messages;
+- 5 compactions;
+- 14 active days, unless merge readiness is expected within 24 hours;
+- 2 context-loss incidents;
+- explicit inability; or
+- error or runner absence for 24 hours plus 2 missed checkpoint intervals.
+
+Freeze new work, ready the successor on the correct machine with read-only
+attestation, transfer only the affected feature, and reconcile every checkout,
+branch, commit, PR, delegate, service/resource, artifact, and issue receipt.
+The successor adopts existing work without duplication and never reopens
+unrelated machine roles or features. Integrator succession remains separate.
+
+The future broker design must use feature-scoped generations and CAS so stale
+generations cannot mutate ownership. Current harness support does not provide
+that guarantee; it is a later additive dependency under a separate issue/PR.
+Until then, canonical issues, immutable commits, local inventories, and explicit
+Amp handoff messages are the succession source of truth.
