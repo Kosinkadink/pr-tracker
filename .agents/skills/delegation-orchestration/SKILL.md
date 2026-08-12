@@ -23,8 +23,8 @@ A complete feature assignment authorizes the owner to:
 5. Commission independent review, fix findings, and verify delegate claims.
 6. Push routine same-repository branches, create/update draft PRs, and maintain
    canonical issue lifecycle/evidence without repeated approval.
-7. Coordinate separately authorized deployment with the service custodian and
-   own live, visual, physical, and cleanup acceptance.
+7. Coordinate authorized deployment with the service custodian and own live,
+   visual, physical, and cleanup acceptance.
 
 Routine bootstrap, MATRIX-GO, stage-GO, micro-slice portfolio planning,
 per-stage approval, and progress phone-home are not required. The feature owner
@@ -34,13 +34,31 @@ privilege, cost, or user-owned-service mutation authority, a true external
 blocker needing coordinator action, merge readiness, a deployment incident, or
 final live completion.
 
-Merge, deployment, destructive/shared-infrastructure action, mutation of a
-user-owned service, and new legal or cost authority remain separately
-controlled unless explicitly granted.
+Outside standard path A below, merge and deployment remain separately
+controlled. Destructive/shared-infrastructure action, mutation of a user-owned
+service, and new legal or cost authority always remain separately controlled.
 
 Already-authorized resource and service operations route to the applicable
 machine/service custodian. Requests for new authority route to the integrator
 or Ops Desk.
+
+## Standard delivery path A
+
+For future feature changes, the integrator may proceed without another
+per-change A/B/C decision only when the exact merge-ready source is independently
+reviewed with no unresolved actionable findings, exact-source checks bind the
+reviewed commit/tree and clean deployment source, a bounded deployment plan
+names dedicated service ownership, health/live acceptance is explicit, and a
+named owner has an explicit rollback plan/artifact and authority to use it.
+
+The sequence is merge -> scoped deployment by the service custodian -> health
+and live acceptance -> rollback on failure. Ordinary source or feature
+ownership is insufficient service authority. Missing conditions require the
+integrator to obtain the missing decision or authority first.
+
+Path A never authorizes destructive/shared-infrastructure changes, unrelated or
+user-owned service mutation, history rewrites, dirty/unreviewed source,
+deployment without rollback, or new legal/cost authority.
 
 ## Role boundaries
 
