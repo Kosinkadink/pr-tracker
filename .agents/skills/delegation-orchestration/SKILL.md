@@ -29,12 +29,18 @@ A complete feature assignment authorizes the owner to:
 Routine bootstrap, MATRIX-GO, stage-GO, micro-slice portfolio planning,
 per-stage approval, and progress phone-home are not required. The feature owner
 contacts the integrator or Ops Desk only for a consequential product decision,
-new safety/legal/cost authority, a true external blocker needing coordinator
-action, merge readiness, a deployment incident, or final live completion.
+a need for new destructive, shared-infrastructure, safety, security, legal,
+privilege, cost, or user-owned-service mutation authority, a true external
+blocker needing coordinator action, merge readiness, a deployment incident, or
+final live completion.
 
 Merge, deployment, destructive/shared-infrastructure action, mutation of a
 user-owned service, and new legal or cost authority remain separately
 controlled unless explicitly granted.
+
+Already-authorized resource and service operations route to the applicable
+machine/service custodian. Requests for new authority route to the integrator
+or Ops Desk.
 
 ## Role boundaries
 
@@ -59,7 +65,9 @@ controlled unless explicitly granted.
 
 Before any repository, service, or process mutation, directly record and
 compare the shell's hostname, primary LAN IP, cwd, and relevant GPU identities
-with the workspace fleet map. Repeat after executor reconnect/replacement or a
+with the workspace fleet map plus the task's explicit expected identity tuple.
+That tuple states expected hostname, primary LAN IP, cwd root, and relevant GPU
+model, UUID, and count. Repeat after executor reconnect/replacement or a
 tool-lease/executor change. Runner names, `list_runners`, broker presence, role
 labels, and thread metadata are routing hints, not identity proof.
 
@@ -98,8 +106,9 @@ Internal workers have no feature-owner conversation context. Include:
 
 1. The canonical issue, feature owner thread, bounded outcome, and terminal
    evidence required in the `steer: false` reply.
-2. Direct executor attestation, absolute local checkout, exact base/branch,
-   public remote, and environment bootstrap.
+2. The expected hostname, primary LAN IP, cwd root, and relevant GPU model,
+   UUID, and count for direct executor attestation, plus the absolute local
+   checkout, exact base/branch, public remote, and environment bootstrap.
 3. Source grounding, accepted behavior, safety/resource boundaries, and files
    or evidence in scope.
 4. Tests, benchmarks, review checks, and exact acceptance criteria.
