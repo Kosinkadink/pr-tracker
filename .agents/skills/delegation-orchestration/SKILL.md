@@ -57,9 +57,9 @@ or Ops Desk.
 - **Machine/service custodian**: controls direct executor identity, GPUs,
   ports, persistent or user-owned services, and exclusive-resource safety. It
   does not own routine feature source work.
-- **Internal delegate/reviewer**: works for one feature owner in an isolated
-  machine-local checkout and reports only to that owner through one reply
-  channel with `steer: false`.
+- **Internal delegate/reviewer**: works for one feature owner in a fresh
+  checkout local to the runner of the machine whose files or resources it uses
+  and reports only to that owner through one reply channel with `steer: false`.
 
 ## Executor and checkout invariants
 
@@ -77,9 +77,13 @@ machine. Preserve user-reserved resources and custodian authority. Never use
 an orb for station work.
 
 Concurrent threads use separate local checkouts, preferably fresh clones under
-the station's `delegates/` folder. No owner or delegate mutates another active
-owner's checkout, branch, process, service, port, GPU, or uncommitted artifact.
-There are no cross-machine holds.
+the target machine station's `delegates/` folder. A primary-machine feature
+owner may launch a worker on another machine's correct live runner when that
+machine owns the affected repository, files, or resources. The owner never uses
+SSH, a remote filesystem, or a cross-machine runtime dependency to access that
+worker or checkout. No owner or delegate mutates another active owner's
+checkout, branch, process, service, port, GPU, or uncommitted artifact. There
+are no cross-machine holds.
 
 ## Creating an internal delegate or reviewer
 
@@ -88,12 +92,17 @@ The feature owner may also implement directly; it chooses decomposition.
 
 1. Call `list_runners` immediately before `create_thread`; runner IDs are
    ephemeral.
-2. Launch on the feature owner's correct local machine runner, never an orb.
-3. Use a separate machine-local checkout and exact public base.
+2. Launch on the correct live runner of the machine whose repository, files, or
+   resources the worker uses, never an orb.
+3. Use a fresh checkout local to that runner and an exact public base.
 4. Pick exactly one result channel. Require a reply to the feature owner with
    `steer: false`; never also call `wait_for_threads` for that worker.
 5. Archive only after the result is independently reconciled and its durable
    execution record is closed.
+
+Routine source-only delegation requires no machine/service custodian approval.
+Identify the custodian and existing authority before a concrete GPU, service,
+port, persistent-process, or exclusive-resource operation.
 
 An independent reviewer is read-only. It receives immutable commit SHAs/ranges,
 exact paths, the canonical issue acceptance contract, and a request for
