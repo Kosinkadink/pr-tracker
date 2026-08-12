@@ -166,7 +166,7 @@ Feature-scoped succession is mandatory at any threshold:
 - 14 active days, unless merge readiness is expected within 24 hours;
 - 2 context-loss incidents;
 - explicit inability; or
-- error or runner absence for 24 hours plus 2 missed checkpoint intervals.
+- error or runner-missing for 24 hours plus 2 missed checkpoint intervals.
 
 Freeze new work, ready the successor on the correct machine with read-only
 attestation, transfer only the affected feature, and reconcile every checkout,
