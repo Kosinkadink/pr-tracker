@@ -1,6 +1,6 @@
 ---
 name: delegation-orchestration
-description: Autonomous whole-feature ownership workflow for multi-thread Amp development. Use when assigning or adopting a complete feature and canonical issue, launching machine-local internal delegates or independent reviewers, maintaining issue and PR evidence, verifying merge readiness, or preparing feature-scoped succession.
+description: Orchestrates autonomous whole-feature ownership for multi-thread Amp development. Use when assigning or adopting a complete feature and canonical issue, launching machine-local internal delegates or independent reviewers, maintaining issue and PR evidence, verifying merge readiness, or preparing feature-scoped succession.
 ---
 
 # Delegation Orchestration
