@@ -1,6 +1,6 @@
-"""Safe file I/O — atomic writes with backup and Windows retry.
+"""Safe file I/O -- atomic writes with backup and Windows retry.
 
-Mirrors the pattern from ComfyUI-Launcher's safe-file.ts:
+Mirrors the pattern from Comfy-Desktop's safe-file.ts:
 - Write to .tmp, optionally back up to .bak, then rename.
 - On Windows, retry rename on EPERM/EACCES (antivirus/indexer locks).
 - Read with .bak fallback if primary is missing or corrupt.
@@ -39,7 +39,7 @@ def atomic_write(path: Path, content: str, *, backup: bool = False) -> None:
                 pass
 
         # os.replace atomically replaces the target (uses MoveFileEx on Windows)
-        # Retry on PermissionError — antivirus/indexer can briefly lock files
+        # Retry on PermissionError -- antivirus/indexer can briefly lock files
         retries = 3
         delay = 0.1
         for attempt in range(retries + 1):
