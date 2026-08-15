@@ -1,4 +1,4 @@
-"""Station management — CRUD, status detection, cleanup.
+"""Station management -- CRUD, status detection, cleanup.
 
 A station is a comfy-vibe-station clone at ``stations_dir/stationN``.
 Station metadata is stored in ``stations_dir/stations.json``.
@@ -23,13 +23,13 @@ def _is_repo(path: Path) -> bool:
     return (path / ".git").exists()
 
 
-# Clone table — every station gets all of these nested repos.
+# Clone table -- every station gets all of these nested repos.
 NESTED_REPOS: list[tuple[str, str]] = [
     ("ComfyUI", "https://github.com/Comfy-Org/ComfyUI.git"),
     ("ComfyUI_frontend", "https://github.com/Comfy-Org/ComfyUI_frontend.git"),
     ("ComfyUI-Manager", "https://github.com/Comfy-Org/ComfyUI-Manager.git"),
-    ("desktop", "https://github.com/Comfy-Org/desktop.git"),
-    ("ComfyUI-Launcher", "https://github.com/Comfy-Org/Comfy-Desktop.git"),
+    ("legacy-desktop", "https://github.com/Comfy-Org/desktop.git"),
+    ("Comfy-Desktop", "https://github.com/Comfy-Org/Comfy-Desktop.git"),
     ("ComfyUI-Launcher-Environments", "https://github.com/Comfy-Org/ComfyUI-Standalone-Environments.git"),
     ("workflow_templates", "https://github.com/Comfy-Org/workflow_templates.git"),
     ("docs", "https://github.com/Comfy-Org/docs.git"),
@@ -64,15 +64,21 @@ RENAMED_REMOTES: list[tuple[str, str]] = [
 # Large repos that should be shallow-cloned (--depth 1) to save time and disk.
 SHALLOW_CLONE_REPOS: set[str] = {"workflow_templates"}
 
-# Default mapping from GitHub repo → subdirectory inside a station.
+# Default mapping from GitHub repo -> subdirectory inside a station.
 DEFAULT_REPO_DIRS: dict[str, str] = {
     "Comfy-Org/ComfyUI": "ComfyUI",
-    "Comfy-Org/Comfy-Desktop": "ComfyUI-Launcher",
+    "Comfy-Org/Comfy-Desktop": "Comfy-Desktop",
     "Comfy-Org/ComfyUI_frontend": "ComfyUI_frontend",
     "Comfy-Org/ComfyUI-Manager": "ComfyUI-Manager",
-    "Comfy-Org/desktop": "desktop",
+    "Comfy-Org/desktop": "legacy-desktop",
     "Kosinkadink/Domfy": "Domfy",
     "Kosinkadink/Domfy-Frontend": "Domfy-Frontend",
+}
+
+# Existing stations retain their original directory names.
+LEGACY_REPO_DIRS: dict[str, str] = {
+    "Comfy-Desktop": "ComfyUI-Launcher",
+    "legacy-desktop": "desktop",
 }
 
 
@@ -123,11 +129,32 @@ def _now_iso() -> str:
 def get_repo_dir(repo: str) -> str:
     """Map a GitHub repo (e.g. 'Comfy-Org/ComfyUI') to the subdirectory name."""
     config = load_tracker_config()
-    repo_dirs = config.get("repo_dirs", DEFAULT_REPO_DIRS)
+    repo_dirs = {**DEFAULT_REPO_DIRS, **config.get("repo_dirs", {})}
     if repo in repo_dirs:
         return repo_dirs[repo]
     # Fallback: use the repo name part after the /
     return repo.split("/", 1)[1] if "/" in repo else repo
+
+
+def _station_repo_path(station_path: Path, dir_name: str) -> Path:
+    """Resolve a station repo without renaming directories in existing stations."""
+    canonical_path = station_path / dir_name
+    if _is_repo(canonical_path):
+        return canonical_path
+    legacy_dir = LEGACY_REPO_DIRS.get(dir_name)
+    if legacy_dir:
+        legacy_path = station_path / legacy_dir
+        if _is_repo(legacy_path):
+            return legacy_path
+    if canonical_path.exists():
+        return canonical_path
+    if legacy_dir and legacy_path.exists():
+        return legacy_path
+    return canonical_path
+
+
+def _repo_is_skipped(dir_name: str, skip_repos: set[str]) -> bool:
+    return dir_name in skip_repos or LEGACY_REPO_DIRS.get(dir_name) in skip_repos
 
 
 def list_stations() -> list[dict]:
@@ -138,7 +165,7 @@ def list_stations() -> list[dict]:
     _register_orphan_dirs()
     data = _load_stations_data()
     stations = data["stations"]
-    # Deduplicate by ID (keep last entry — the most recently written)
+    # Deduplicate by ID (keep last entry -- the most recently written)
     seen: dict[int, dict] = {}
     for s in stations:
         seen[s.get("id", 0)] = s
@@ -179,7 +206,7 @@ def reserve_idle_station(station_id: int) -> bool:
     station no longer exists or is already in use.
 
     This closes the race between ``find_idle_station()`` and the background
-    thread that later runs ``reuse_station()`` — without the reservation,
+    thread that later runs ``reuse_station()`` -- without the reservation,
     multiple PRs/issues opened in quick succession all see the same idle
     station and start clobbering each other.
     """
@@ -281,7 +308,7 @@ def _run_git(
         env["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_basic}"
 
     if cancel_event is None and on_output is None:
-        # Fast path — no cancellation or streaming needed.
+        # Fast path -- no cancellation or streaming needed.
         return subprocess.run(
             ["git"] + args,
             cwd=str(cwd),
@@ -292,7 +319,7 @@ def _run_git(
             env=env,
         )
 
-    # Cancellable / streaming path — use Popen.
+    # Cancellable / streaming path -- use Popen.
     import time
 
     creationflags = 0
@@ -366,7 +393,7 @@ ProgressCallback = Callable[[str, int, int], None]
 """on_progress(message, current_step, total_steps)"""
 
 OutputCallback = Callable[[str], None] | None
-"""on_output(line) — receives git stderr lines for live output display."""
+"""on_output(line) -- receives git stderr lines for live output display."""
 
 
 def create_station(
@@ -447,7 +474,10 @@ def create_station(
     # 2. Clone all nested repos in parallel (skips any already cloned)
     _check_cancel()
     skip_repos: set[str] = set(_skip_list)
-    repos_to_clone = [(d, u) for d, u in NESTED_REPOS if d not in skip_repos]
+    repos_to_clone = [
+        (d, u) for d, u in NESTED_REPOS
+        if not _repo_is_skipped(d, skip_repos)
+    ]
     # Total steps: 1 (clone base) + repos to clone + 1 (checkout) + 1 (register)
     total = 1 + len(repos_to_clone) + 1 + 1
     _active: set[str] = set()
@@ -465,9 +495,9 @@ def create_station(
     def _clone_one(dir_name: str, clone_url: str) -> None:
         if _cancelled.is_set():
             return
-        nested_path = station_path / dir_name
+        nested_path = _station_repo_path(station_path, dir_name)
         if _is_repo(nested_path):
-            progress(f"⏭ {dir_name} (already cloned)")
+            progress(f"⏭ {nested_path.name} (already cloned)")
             return
         # Remove partial clone directory (exists but no .git)
         if nested_path.exists():
@@ -476,10 +506,10 @@ def create_station(
         cmd = ["clone"]
         if dir_name in SHALLOW_CLONE_REPOS:
             cmd += ["--depth", "1"]
-        cmd += [clone_url, dir_name]
+        cmd += [clone_url, nested_path.name]
         with _active_lock:
             _active.add(dir_name)
-        log_msg(f"⏳ {dir_name}…")
+        log_msg(f"⏳ {dir_name}...")
         _update_active_msg()
         try:
             _run_git(cmd, cwd=station_path, cancel_event=_cancelled, on_output=on_output)
@@ -512,9 +542,9 @@ def create_station(
     # 3. Checkout PR branch if applicable
     if pr_number and repo:
         sub_dir = get_repo_dir(repo)
-        nested_repo_path = station_path / sub_dir
+        nested_repo_path = _station_repo_path(station_path, sub_dir)
         branch_name = f"pr-{pr_number}"
-        log_msg(f"⏳ Checking out PR #{pr_number} in {sub_dir}…")
+        log_msg(f"⏳ Checking out PR #{pr_number} in {nested_repo_path.name}...")
         if nested_repo_path.exists():
             try:
                 _run_git(
@@ -545,7 +575,7 @@ def create_station(
 
     # 4. Register in stations.json
     _check_cancel()
-    progress("✓ Registering station…")
+    progress("✓ Registering station...")
     session_name = f"station{station_id}"
     station_meta: dict[str, Any] = {
         "id": station_id,
@@ -615,8 +645,8 @@ def reuse_station(
     old_repo = station.get("repo")
     if old_repo:
         old_dir = get_repo_dir(old_repo)
-        old_path = station_path / old_dir
-        progress(f"Resetting {old_dir}")
+        old_path = _station_repo_path(station_path, old_dir)
+        progress(f"Resetting {old_path.name}")
         if old_path.exists():
             try:
                 _checkout_default_branch(old_path)
@@ -636,17 +666,17 @@ def reuse_station(
     # 2. Pull latest on target repo + checkout PR if applicable
     if pr_number and repo:
         sub_dir = get_repo_dir(repo)
-        nested_repo_path = station_path / sub_dir
+        nested_repo_path = _station_repo_path(station_path, sub_dir)
         branch_name = f"pr-{pr_number}"
         if nested_repo_path.exists():
             # pull_all_branches above already fetched + fast-forwarded the
             # default branch, so we only need to land on it before checking out
             # the PR branch.
-            progress(f"Checking out PR #{pr_number} in {sub_dir}")
+            progress(f"Checking out PR #{pr_number} in {nested_repo_path.name}")
             try:
                 _checkout_default_branch(nested_repo_path)
             except (subprocess.CalledProcessError, OSError):
-                pass  # best-effort — PR fetch below still works
+                pass  # best-effort -- PR fetch below still works
             # Fetch and checkout PR branch
             try:
                 _run_git(
@@ -726,7 +756,7 @@ def delete_station(station_id: int) -> bool:
 def cleanup_station(station_id: int) -> None:
     """Reset all nested repos in a station to main (best-effort).
 
-    Also kills the tmux session if one exists — stale sessions from
+    Also kills the tmux session if one exists -- stale sessions from
     the previous PR/issue have no value when the station is reused.
     """
     station = get_station(station_id)
@@ -752,12 +782,12 @@ def cleanup_station(station_id: int) -> None:
         pass
 
     for dir_name, _ in NESTED_REPOS:
-        nested = station_path / dir_name
+        nested = _station_repo_path(station_path, dir_name)
         if not _is_repo(nested):
             continue
         # Discard tracked changes first so the default-branch checkout doesn't
         # refuse to switch due to "local changes would be overwritten". Each
-        # step is its own try/except — a failure in one (e.g. reset on a
+        # step is its own try/except -- a failure in one (e.g. reset on a
         # detached/odd state) must not skip the others. The checkout resolves
         # the repo's real default (``master`` for ComfyUI), not a hardcoded
         # ``main`` that would silently strand it on a stale branch.
@@ -799,7 +829,7 @@ def check_uncommitted_changes(station_id: int) -> list[str]:
 
     dirty: list[str] = []
     for dir_name, _ in NESTED_REPOS:
-        nested = station_path / dir_name
+        nested = _station_repo_path(station_path, dir_name)
         if not _is_repo(nested):
             continue
         try:
@@ -811,7 +841,7 @@ def check_uncommitted_changes(station_id: int) -> list[str]:
                 timeout=30,
             )
             if result.stdout.strip():
-                dirty.append(dir_name)
+                dirty.append(nested.name)
         except (subprocess.TimeoutExpired, OSError):
             pass
     return dirty
@@ -829,7 +859,7 @@ def _sync_nested_amp_skills(station_path: Path) -> list[str]:
     Iterates over ``NESTED_REPOS`` in declaration order; if two repos
     publish a skill with the same name the later one wins.
 
-    Existing destination skill directories are replaced. Best-effort —
+    Existing destination skill directories are replaced. Best-effort --
     failures are silently ignored. Returns the list of skill names synced.
     """
     import shutil
@@ -839,7 +869,7 @@ def _sync_nested_amp_skills(station_path: Path) -> list[str]:
     dst_root_created = False
 
     for dir_name, _ in NESTED_REPOS:
-        src_root = station_path / dir_name / ".agents" / "skills"
+        src_root = _station_repo_path(station_path, dir_name) / ".agents" / "skills"
         if not src_root.is_dir():
             continue
 
@@ -879,7 +909,10 @@ def _clone_missing_repos(
     skip_repos: set[str] = set(config.get("skip_station_repos", []))
     missing = [
         (d, u) for d, u in NESTED_REPOS
-        if d not in skip_repos and not _is_repo(station_path / d)
+        if (
+            not _repo_is_skipped(d, skip_repos)
+            and not _is_repo(_station_repo_path(station_path, d))
+        )
     ]
     if not missing:
         return []
@@ -887,20 +920,20 @@ def _clone_missing_repos(
     cloned: list[str] = []
     for dir_name, clone_url in missing:
         if on_progress:
-            on_progress(f"Cloning {dir_name}…", 0, 0)
-        nested = station_path / dir_name
+            on_progress(f"Cloning {dir_name}...", 0, 0)
+        nested = _station_repo_path(station_path, dir_name)
         # Remove partial directory (exists but no .git)
         if nested.exists():
             shutil.rmtree(nested, ignore_errors=True)
         cmd = ["clone"]
         if dir_name in SHALLOW_CLONE_REPOS:
             cmd += ["--depth", "1"]
-        cmd += [clone_url, dir_name]
+        cmd += [clone_url, nested.name]
         try:
             _run_git(cmd, cwd=station_path)
             cloned.append(dir_name)
         except (subprocess.CalledProcessError, OSError):
-            pass  # non-fatal — will be missing but station still usable
+            pass  # non-fatal -- will be missing but station still usable
     return cloned
 
 
@@ -935,7 +968,7 @@ def _migrate_remote_urls(
     old_to_new = {_normalize_remote(old): new for old, new in RENAMED_REMOTES}
     updated: list[str] = []
     for dir_name, _ in NESTED_REPOS:
-        nested = station_path / dir_name
+        nested = _station_repo_path(station_path, dir_name)
         if not _is_repo(nested):
             continue
         try:
@@ -948,12 +981,12 @@ def _migrate_remote_urls(
         if not new_url or _normalize_remote(current) == _normalize_remote(new_url):
             continue
         if on_progress:
-            on_progress(f"Updating {dir_name} origin URL…", 0, 0)
+            on_progress(f"Updating {nested.name} origin URL...", 0, 0)
         try:
             _run_git(["remote", "set-url", "origin", new_url], cwd=nested)
-            updated.append(dir_name)
+            updated.append(nested.name)
         except (subprocess.CalledProcessError, OSError):
-            pass  # non-fatal — fetch may still work via upstream redirect
+            pass  # non-fatal -- fetch may still work via upstream redirect
     return updated
 
 
@@ -980,7 +1013,7 @@ def _default_branch(repo_path: Path) -> str | None:
 def _checkout_default_branch(repo_path: Path) -> None:
     """Check out the repo's origin default branch (``main`` or ``master``).
 
-    Resolves the real default from ``origin/HEAD`` first — hardcoding ``main``
+    Resolves the real default from ``origin/HEAD`` first -- hardcoding ``main``
     silently strands repos whose default is ``master`` (e.g. ComfyUI) on
     whatever branch a prior task left checked out. Falls back to ``main`` then
     ``master`` if ``origin/HEAD`` is unset. Raises the last error if none of
@@ -1043,14 +1076,14 @@ def pull_all_branches(
     failed: list[str] = []
     repos = [
         (d, u) for d, u in NESTED_REPOS
-        if d not in just_cloned and _is_repo(station_path / d)
+        if d not in just_cloned and _is_repo(_station_repo_path(station_path, d))
     ]
     total = len(repos)
 
     for i, (dir_name, _) in enumerate(repos, 1):
-        nested = station_path / dir_name
+        nested = _station_repo_path(station_path, dir_name)
         if on_progress:
-            on_progress(f"Pulling {dir_name}…", i, total)
+            on_progress(f"Pulling {nested.name}...", i, total)
 
         # Always fetch first so origin/<default> is current even when the
         # checked-out branch isn't the one being pulled.
@@ -1076,7 +1109,7 @@ def pull_all_branches(
 
         # If we're not sitting on the default branch, also bring the local
         # default ref up to origin so a later `git checkout <default>` lands
-        # on fresh history. Best-effort — a diverged local default just
+        # on fresh history. Best-effort -- a diverged local default just
         # means whoever made local commits has to reconcile by hand.
         if default and current != default:
             try:
@@ -1116,7 +1149,7 @@ def activate_station(
     if not station:
         raise RuntimeError(f"Station {station_id} not found")
 
-    # Already active — just pull latest
+    # Already active -- just pull latest
     was_idle = station.get("status") == "idle"
 
     if was_idle:
@@ -1126,7 +1159,7 @@ def activate_station(
         if dirty and force:
             # Reset all nested repos to default branch
             if on_progress:
-                on_progress("Resetting dirty repos to default branch…", 0, 0)
+                on_progress("Resetting dirty repos to default branch...", 0, 0)
             cleanup_station(station_id)
             # Re-fetch station after cleanup (status set to idle by cleanup)
             station = get_station(station_id)
@@ -1158,13 +1191,13 @@ class StationDirtyError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Terminal launching — OS-specific templates
+# Terminal launching -- OS-specific templates
 # ---------------------------------------------------------------------------
 
 # Each template is a list of args with placeholders:
-#   {path}   — station directory
-#   {title}  — tab title (e.g. "Station 5 — desktop PR #123")
-#   {window} — window name for grouping (e.g. "station5")
+#   {path}   -- station directory
+#   {title}  -- tab title (e.g. "Station 5 -- desktop PR #123")
+#   {window} -- window name for grouping (e.g. "station5")
 #
 # Windows uses a single `wt` invocation with `;` to open both tabs atomically.
 # macOS and Linux launch each tab as a separate process.
@@ -1216,7 +1249,7 @@ def _linux_terminal_templates() -> dict:
 
 
 def _build_terminal_templates() -> dict[str, dict]:
-    """Build the OS → templates map at call time so env-var-driven flags
+    """Build the OS -> templates map at call time so env-var-driven flags
     (e.g. ``--take-me-back``) are reflected in the launch command."""
     return {
         "win32": _win32_terminal_templates(),
@@ -1347,7 +1380,7 @@ def open_terminal_tabs(
     latest on all branches).  Callers that handle activation separately
     (e.g. to show a dirty-repo warning first) should pass ``skip_activate=True``.
 
-    Returns ``(ok, is_new)`` — *ok* is True if at least one tab was
+    Returns ``(ok, is_new)`` -- *ok* is True if at least one tab was
     launched, *is_new* is True if the session was freshly created.
     """
     station = get_station(station_id)
@@ -1374,10 +1407,10 @@ def open_terminal_tabs(
     issue = station.get("issue_number")
     if pr and repo:
         short = repo.split("/", 1)[1] if "/" in repo else repo
-        title_base = f"Station {station_id} — {short} PR #{pr}"
+        title_base = f"Station {station_id} -- {short} PR #{pr}"
     elif issue and repo:
         short = repo.split("/", 1)[1] if "/" in repo else repo
-        title_base = f"Station {station_id} — {short} #{issue}"
+        title_base = f"Station {station_id} -- {short} #{issue}"
 
     # --- tmux backend (default) ---
     if _use_tmux_backend():

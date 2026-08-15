@@ -1,6 +1,6 @@
 """Disk-persisted ETag cache for GitHub API responses.
 
-Mirrors the pattern from ComfyUI-Launcher/src/main/lib/fetch.ts:
+Mirrors the pattern from Comfy-Desktop/src/main/lib/fetch.ts:
 - Store {etag, data} per URL in a JSON file
 - Send If-None-Match on requests; 304 = free (no rate-limit cost)
 - Fall back to cached data on errors
