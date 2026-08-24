@@ -40,8 +40,15 @@ When the user brings a new idea to you, hop into the system yourself:
 - Report results directly to the user in your own thread, as visible text.
 - When relaying a user message to another thread, quote it in full, unedited,
   marked `VERBATIM USER MESSAGE`. Never paraphrase or filter the user.
-- Workers reply to their parent through exactly one channel with
-  `steer: false`. Never combine reply-back with `wait_for_threads`.
+- Workers reply to their parent through exactly one channel: one consolidated
+  completion or blocked message. Never combine reply-back with
+  `wait_for_threads`.
+- Never write "steer: false" (or any steer marker) in a message body. No
+  steering control exists on thread messages; the old thread_interact tool
+  that honored that flag is gone, and the marker is dead text. Minimize
+  disruption instead: batch progress into one consolidated message per
+  milestone, put routine status in issue comments, and message a thread only
+  when it must act on or reply to something.
 - Nothing fires on a timer: no schedules, dues, or periodic audits.
 
 ## Launching workers
@@ -59,7 +66,7 @@ work yourself.
    authorization for these labels). Delegates are never hidden.
 4. No SSH, remote filesystems, or cross-machine runtime dependencies.
 5. Write a self-contained prompt: goal, repo, exact base, branch, constraints,
-   tests, non-goals, and "reply with `steer: false` when done".
+   tests, non-goals, and "send one consolidated reply when done".
 6. Verify the worker's diff and rerun the checks yourself before merging.
 
 An independent reviewer is read-only, receives exact commits and paths, and
