@@ -43,12 +43,19 @@ When the user brings a new idea to you, hop into the system yourself:
 - Workers reply to their parent through exactly one channel: one consolidated
   completion or blocked message. Never combine reply-back with
   `wait_for_threads`.
-- Never write "steer: false" (or any steer marker) in a message body. No
-  steering control exists on thread messages; the old thread_interact tool
-  that honored that flag is gone, and the marker is dead text. Minimize
-  disruption instead: batch progress into one consolidated message per
-  milestone, put routine status in issue comments, and message a thread only
-  when it must act on or reply to something.
+- Use the queue_thread_message tool for every routine, milestone, and
+  completion message between threads (global user plugin; call
+  reload_plugins if it is missing). It queues behind the recipient's
+  in-progress work, so the recipient sees it only when its current task
+  finishes; an idle recipient wakes normally. Set its steer parameter to
+  true only for genuinely urgent interrupts. Fall back to the built-in
+  send_thread_message (which can wake or interrupt the recipient) only if
+  the plugin tool cannot be loaded.
+- Never write "steer: false" (or any steer marker) in a message body -
+  steering is controlled only by the queue_thread_message steer parameter,
+  and the marker is dead text. Minimize disruption: batch progress into one
+  consolidated message per milestone, put routine status in issue comments,
+  and message a thread only when it must act on or reply to something.
 - Nothing fires on a timer: no schedules, dues, or periodic audits.
 
 ## Launching workers
