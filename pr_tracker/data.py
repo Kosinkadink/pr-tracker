@@ -289,7 +289,7 @@ def compute_ci_status(check_runs: list[dict]) -> dict[str, Any]:
         return {"status": "unknown", "failed_count": 0}
     conclusions = [cr.get("conclusion") for cr in check_runs]
     statuses = [cr.get("status") for cr in check_runs]
-    if all(c == "success" for c in conclusions):
+    if all(c in ("success", "skipped", "neutral") for c in conclusions):
         return {"status": "pass", "failed_count": 0}
     if any(c in ("failure", "timed_out") for c in conclusions):
         failed = sum(1 for c in conclusions if c in ("failure", "timed_out"))
