@@ -146,3 +146,33 @@ skill, runs the script once, and replies with the report plus recommendations
 (queued, steer: false). Do not spawn a delegate per thread, and never run the
 script more than once per heartbeat - the 60/hour server rate limit is shared
 across the whole account.
+
+## Owner liveness
+
+Run `scripts/owner_liveness.py` to flag potentially unreachable owners from
+`amp threads export` JSON, rather than relying on self-reports or runner
+listings. It is read-only, uses only Python's stdlib and a logged-in Amp CLI,
+and does not query the usage endpoint:
+
+```bash
+python3 scripts/owner_liveness.py --active-minutes 10 --stale-minutes 10 --turn-max-hours 2 T-... T-...
+```
+
+- `WORKING`: recent model activity, an assistant message in progress, or recent inbound text.
+- `IDLE`: the last turn ended and no inbound text followed it.
+- `UNANSWERED`: inbound user text has waited beyond `--stale-minutes` without an assistant reply.
+- `WEDGED`: a tool call has no result past `--stale-minutes`, or results are present but model activity is older than `--active-minutes`.
+- `STREAMING`: an incomplete assistant message is older than `--stale-minutes`.
+- `NO-ASSISTANT-TURN`: no assistant message exists; `UNKNOWN`: timestamps needed for classification are missing.
+- `+QUEUE-BLIND`: the current turn exceeds `--turn-max-hours` (default 2), even if the owner is still `WORKING`. Reports the observed running duration and assistant-message count since the last completed non-`tool_use` stop. Time starts at the first timestamped assistant message in that run, excluding earlier idle time; inbound user text does not reset it.
+
+Last-model timestamps are Pacific (UTC-7). These states are transcript-based
+signals, not proof that a runner is disconnected; long tools may still be
+healthy. Export errors are reported per thread with a nonzero exit status.
+
+Non-steering queued messages are delivered only when the current turn ends.
+The server-side pending queue itself is not visible in the export
+(`amp threads raw` returns 403), so `QUEUE-BLIND` is a proxy, not a queue count
+or proof that messages are pending. A text user message counted as inbound
+may have been steer-delivered; it does not prove queued non-steering messages
+were delivered.

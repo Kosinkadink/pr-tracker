@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -49,9 +50,7 @@ def test_preserves_other_settings_and_path_entries(settings_file, skills_dir):
     data = read(settings_file)
     assert data["amp.notifications.enabled"] is False
     sep = amp_settings._path_separator()
-    assert data[SKILLS_PATH_KEY] == sep.join(
-        ["/home/user/my-skills", str(skills_dir)]
-    )
+    assert data[SKILLS_PATH_KEY] == sep.join(["/home/user/my-skills", str(skills_dir)])
 
 
 def test_replaces_stale_pr_tracker_entry(settings_file, skills_dir, tmp_path):
@@ -97,5 +96,5 @@ def test_missing_skills_dir_is_a_noop(settings_file, tmp_path):
 
 def test_shared_skills_dir_points_into_this_checkout():
     d = amp_settings.shared_skills_dir()
-    assert d.parts[-3:] == ("pr-tracker", ".agents", "skills")
+    assert d == Path(__file__).resolve().parents[1] / ".agents" / "skills"
     assert d.is_dir()
