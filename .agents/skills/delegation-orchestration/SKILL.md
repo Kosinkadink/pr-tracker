@@ -1,105 +1,114 @@
 ---
 name: delegation-orchestration
-description: Minimal feature-owner delegation for multi-thread Amp development. Use when owning a feature end to end, launching machine-local worker or reviewer threads, keeping issue and PR evidence, or handing a feature to a fresh thread.
+description: Feature-owner delegation for multi-thread Amp development under the workspace DELEGATION.md. Use when owning a feature end to end, launching machine-local worker or verifier threads, keeping issue and PR evidence, or handing a feature to a fresh thread.
 ---
 
 # Delegation Orchestration
 
-One thread owns one feature end to end. The workspace `DELEGATION.md` is
-authoritative when present. There is no Ops Desk, integrator, continuity
-monitor, broker role, schedule, or succession protocol. The user is the only
-approver and the only escalation point.
+The workspace `DELEGATION.md` is the coordination policy and wins over this
+skill wherever the two differ. This skill is the owner's working checklist
+for that policy. Coordination is three persistent threads: the desk (talks to
+the user, files issues with acceptance criteria, rules on decisions), the
+dispatcher (creates and succeeds owner threads, keeps `CURRENT-PRIORITIES.md`
+and `RUNNERS.md`), and the integrator (lands finished pull requests, resolves
+merge conflicts, may push to owner branches, owns red main). Owners never
+merge to main and never merge main into a pull request that is waiting to
+land; the integrator does both.
 
 ## Feature ownership
 
-The owner investigates, implements, tests, reviews, merges, deploys, and
-live-verifies its feature. Routine work needs no approval from anyone:
-branches, commits, PRs, issue updates, merging after one independent review
-passes, and deploying feature-dedicated services with a stated rollback plan.
+One thread owns one feature issue until it closes. The owner posts a plan on
+the issue before coding, implements on one branch in its own lane, runs the
+repository's fast gates, commissions a fresh-context verifier against the
+issue's acceptance criteria, and on `VERDICT: PASS` adds the label
+`ready-to-land` to the pull request. Landing is that label, not a message.
+The owner then starts its next item; the integrator lands the pull request
+and closes the issue.
 
-Escalate to the user only for: destructive or shared-infrastructure actions;
-the user's personal machines, services, money, or legal exposure; a genuinely
-ambiguous product decision; and the final done/blocked report.
+Routine work needs no approval: branches, commits, pushes, draft pull
+requests, issue comments, worker and verifier threads. Message the
+dispatcher only for a blocker or a finding it must act on (a lost thread, a
+machine problem). Design questions that need the user become `decision`
+issues, never chat.
 
-### Intake: becoming a feature owner
-
-When the user brings a new idea to you, hop into the system yourself:
-
-1. Clarify scope with the user until acceptance criteria are clear.
-2. Create the canonical issue in the owning repo (scope, acceptance criteria,
-   non-goals).
-3. Add one owner row to the workspace `CURRENT-PRIORITIES.md` (feature, issue
-   link, your own thread ID).
-4. Label yourself with the feature slug and set a descriptive title:
-   `amp threads label <own-id> <slug>` and `amp threads rename <own-id>
-   "<title>"` (standing user authorization).
-5. Proceed as owner. No registration anywhere else.
+An owner never narrows its posted plan, never marks scope "later" or
+"follow-up", and never closes an issue around a gap; only the user re-scopes.
+Defects found outside the accepted scope get their own issues with measured
+evidence and checkable acceptance criteria.
 
 ## Message rules
 
-- Report results directly to the user in your own thread, as visible text.
-- When relaying a user message to another thread, quote it in full, unedited,
-  marked `VERBATIM USER MESSAGE`. Never paraphrase or filter the user.
-- Workers reply to their parent through exactly one channel: one consolidated
-  completion or blocked message. Never combine reply-back with
-  `wait_for_threads`.
-- Use the queue_thread_message tool for every routine, milestone, and
-  completion message between threads (global user plugin; call
-  reload_plugins if it is missing). It queues behind the recipient's
-  in-progress work, so the recipient sees it only when its current task
-  finishes; an idle recipient wakes normally. Set its steer parameter to
-  true only for genuinely urgent interrupts. Fall back to the built-in
-  send_thread_message (which can wake or interrupt the recipient) only if
-  the plugin tool cannot be loaded.
-- Never write "steer: false" (or any steer marker) in a message body -
-  steering is controlled only by the queue_thread_message steer parameter,
-  and the marker is dead text. Minimize disruption: batch progress into one
-  consolidated message per milestone, put routine status in issue comments,
-  and message a thread only when it must act on or reply to something.
-- Nothing fires on a timer: no schedules, dues, or periodic audits.
+- Use `queue_thread_message` for every report between threads; it is a
+  global User plugin (call `reload_plugins` if missing). Set `steer` true
+  only for stops and corrections. Never use `send_thread_message` for a
+  report; it interrupts the recipient.
+- Every brief for another thread contains, with the recipient ID filled in:
+  "Report via `queue_thread_message` to thread `T-...`;
+  `send_thread_message` is forbidden for reports because it interrupts the
+  recipient". Grep the brief for both before sending.
+- Never write "steer: false" or any steer marker in a message body.
+- Every instruction states its API precondition (exact PR head or main SHA)
+  and the recipient checks it before acting.
+- End every turn within 30 minutes; run long commands in the background so
+  queued messages arrive. Pushes, plans and progress are visible on GitHub
+  and are never messaged.
+- Report to the thread that briefed you, never to the desk or the user
+  directly unless the brief names them.
 
-## Launching workers
+## Launching workers and verifiers
 
-Use a worker only for real parallelism or context isolation; otherwise do the
-work yourself.
+Owners are top-level threads with thread-creation tools. Use
+`spawn_thread` with `link_parent` false so the child keeps its own creation
+tools; `executor: orb` and `executor: runner` are refused for tool-spawned
+threads, so work on another machine goes to that machine's persistent
+machine worker (listed in `RUNNERS.md`) by `queue_thread_message`. Use Task
+for a bounded fresh-context subagent that needs no thread of its own.
 
-1. Call `list_runners` immediately before `create_thread`; runner IDs are
-   ephemeral.
-2. Launch on the live runner of the machine whose files the worker touches.
-   Never an orb for station work. Fresh clone per concurrent worker.
-3. Create every worker with a label naming the feature's issue slug (for
-   example `domfy-30`) and a descriptive title, so the delegate tree is
-   discoverable via `find_thread label:...` and the dashboard (standing user
-   authorization for these labels). Delegates are never hidden.
-4. No SSH, remote filesystems, or cross-machine runtime dependencies.
-5. Write a self-contained prompt: goal, repo, exact base, branch, constraints,
-   tests, non-goals, and "send one consolidated reply when done".
-6. Verify the worker's diff and rerun the checks yourself before merging.
-
-An independent reviewer is read-only, receives exact commits and paths, and
-returns concrete findings. A source author never reviews its own work.
+1. Use a worker only for real parallelism or context isolation; otherwise do
+   the work yourself. Workers and verifiers are `low`; a medium worker needs
+   a one-line reason in the plan. Nothing an owner creates runs above medium.
+2. Write a self-contained brief: goal, repository, exact base and branch,
+   lane path, constraints, exact commands, non-goals, the reporting sentence
+   above, and "send one consolidated reply when done".
+3. A verifier is fresh-context and has not seen the implementation
+   conversation. Give it the issue link, branch, exact 40-hex head,
+   acceptance criteria and a deleted-tests diff against the merge base. It
+   posts `VERDICT: PASS - <head>` or `VERDICT: FAIL - <head>` on the wrapper
+   issue; packet hygiene goes under `PACKET:` lines, never as a FAIL.
+4. From the verification request until the verdict, push nothing to the
+   branch; a push voids the verdict. After the second FAIL on one pull
+   request, stop and let the dispatcher open a `decision` issue.
+5. Verify a worker's diff and rerun its checks yourself before freezing a
+   head that includes it.
 
 ## Accountability
 
-- One issue per feature in the owning repo: scope, acceptance criteria, and
-  evidence comments. No separate ledgers, labels taxonomies, or priority rows.
-- Same-repo branches and PRs, squash-merged by default (one commit per PR on
-  main). `Refs #N` while work remains; `Closes #N` when merge finishes it.
-- No bookkeeping or reconcile commits; status goes in issue comments.
+- Committed means pushed: every commit reaches `origin` within the turn that
+  made it. Heads are 40-hex SHAs pasted from `git rev-parse HEAD` or the API.
+- Pull request body line 1: `Refs Kosinkadink/comfy-vibe-station#N`; no
+  closing keyword; body carries what the diff does, evidence and the
+  finished `TESTED.md` row. The integrator squash-merges and closes the
+  issue.
+- Cross-repository pins point at a landed main SHA the change is compatible
+  with; never re-pin because a newer main exists.
+- Never dispatch, rerun or cancel GitHub Actions workflows; never touch
+  Actions secrets or deploy keys. Public repositories run hosted runners only.
+- Evidence goes on issues, never as files committed to code repositories.
 
 ## Safety
 
-- Confirm `hostname` + `pwd` once per session before mutating anything, and
-  again after an executor change.
-- Do not touch another thread's checkout, branch, service, port, or process.
-- Rollback plan before any deploy. User-reserved resources and user-owned
-  services stay untouched without explicit user permission.
-- Retired machines stay retired.
+- Confirm `hostname` and `pwd` once per session before mutating anything.
+- Work only in your own lane under `lanes/`; never touch another thread's
+  checkout, branch, service, port or process. Never edit the runner root's
+  nested checkouts.
+- GPU work on shared machines runs inside `flock ~/gpu-claims/gpuN.lock`;
+  wait for holders, never kill them. RipperPC GPU0 is reserved for the user.
+- Never print credentials; scope tokens to the single command that needs
+  them. Never override Git identity.
 
 ## Continuity
 
-When you grow long, slow, or context-bloated (or the user says "succeed
-yourself"), load the `succeeding-yourself` skill and roll over to a fresh
-successor thread. If a thread dies outright: start a fresh thread, point it
-at the issue and PR, and note the new owner thread on the issue. The issue is
-the handoff document; nothing else is required.
+When you grow long, slow or context-bloated, or the dispatcher says so, load
+`succeeding-yourself`. The issue plus its dependency verdicts are the handoff
+document. If you are a worker, ask your parent for succession instead of
+launching your own successor.
