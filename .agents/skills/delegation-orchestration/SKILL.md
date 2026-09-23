@@ -57,9 +57,14 @@ evidence and checkable acceptance criteria.
 
 ## Launching workers and verifiers
 
-Owners are top-level threads with thread-creation tools. Use
-`spawn_thread` with `link_parent` false so the child keeps its own creation
-tools; `executor: orb` and `executor: runner` are refused for tool-spawned
+Owners are top-level threads with thread-creation tools. Two identical
+global plugins provide `spawn_thread` and `spawn_thread_alt`; Amp hides a
+plugin's own tool inside the threads that plugin creates, so a thread has
+whichever one did not create it. Use whichever is present with
+`link_parent` false so the child keeps its own creation tools (the child
+then holds the other one). If neither is present, call `reload_plugins`
+once and quote the tool list to the dispatcher if both are still missing.
+`executor: orb` and `executor: runner` are refused for tool-spawned
 threads, so work on another machine goes to that machine's persistent
 machine worker (listed in `RUNNERS.md`) by `queue_thread_message`. Use Task
 for a bounded fresh-context subagent that needs no thread of its own.

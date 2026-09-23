@@ -33,10 +33,12 @@ One comment on the feature's issue containing everything a stranger needs:
 
 ## 3. Launch the successor
 
-1. Use `spawn_thread` with `link_parent` false on your own runner, at the
-   same tier you run at (never above medium). If `spawn_thread` is missing,
-   call `reload_plugins` once; if it is still missing, message the
-   dispatcher for succession instead.
+1. Use whichever of `spawn_thread` or `spawn_thread_alt` is present, with
+   `link_parent` false on your own runner, at the same tier you run at
+   (never above medium). A thread never has both: Amp hides the tool that
+   created it, and the successor receives the other one. If neither is
+   present, call `reload_plugins` once; if both are still missing, message
+   the dispatcher for succession instead, quoting your tool list.
 2. The prompt is self-contained: feature issue URL, lane path, branch, the
    handoff comment link, predecessor thread ID, the dispatcher thread ID,
    and the sentence "Report via `queue_thread_message` to thread
