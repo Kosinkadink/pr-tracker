@@ -192,6 +192,8 @@ python -m pr_tracker_tui
 
 Stations use tmux sessions for terminal management. Pressing `W` on a PR/issue creates a station and opens a tmux session with a shell + amp window. Prompt presets are automatically injected into amp based on the PR/issue metadata.
 
+Opening or activating a station runs a normal interactive `amp` command and does not register an Amp runner. The separate start-runner action is explicit: after confirmation, it registers `<host>-station<N>` on ampcode.com with `amp --no-tui --runner-id <host>-station<N>`.
+
 **Requirements:**
 - **Windows:** Install [psmux](https://github.com/nicr9/psmux): `winget install psmux`
 - **macOS:** `brew install tmux`

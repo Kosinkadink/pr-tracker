@@ -19,6 +19,7 @@ def toggle_station_runner(screen: Screen, station: dict | None) -> None:
     from pr_tracker.amp_runners import (
         is_runner_running,
         prepare_and_start_station_runner,
+        runner_id_for_station,
         stop_station_runner,
     )
 
@@ -30,8 +31,6 @@ def toggle_station_runner(screen: Screen, station: dict | None) -> None:
     except Exception as e:
         screen.notify(f"Runner action failed: {e}", severity="error")
         return
-
-    screen.notify(f"Preparing station {sid} for Amp runner...")
 
     def _start(*, force: bool = False) -> None:
         try:
@@ -69,9 +68,24 @@ def toggle_station_runner(screen: Screen, station: dict | None) -> None:
             ),
         )
 
-    screen.run_worker(
-        _start,
-        thread=True,
-        group=f"station-{sid}-runner",
-        exclusive=True,
+    def _confirm_start(confirmed: bool) -> None:
+        if not confirmed:
+            return
+        screen.notify(f"Preparing station {sid} for Amp runner...")
+        screen.run_worker(
+            _start,
+            thread=True,
+            group=f"station-{sid}-runner",
+            exclusive=True,
+        )
+
+    from .confirm import ConfirmScreen
+
+    runner_id = runner_id_for_station(sid)
+    screen.app.push_screen(
+        ConfirmScreen(
+            f"Start Amp runner {runner_id}?\n\n"
+            f"This registers {runner_id} on ampcode.com."
+        ),
+        callback=_confirm_start,
     )
