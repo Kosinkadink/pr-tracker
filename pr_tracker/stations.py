@@ -1131,6 +1131,8 @@ def activate_station(
             # Re-fetch station after cleanup (status set to idle by cleanup)
             station = get_station(station_id)
 
+    _remove_legacy_remote_thread_creation_setting(Path(station["path"]))
+
     # Mark as preparing so the UI shows progress
     update_station(station_id, status="preparing")
 
@@ -1143,6 +1145,26 @@ def activate_station(
     if failed:
         result["pull_failures"] = failed
     return result
+
+
+def _remove_legacy_remote_thread_creation_setting(station_path: Path) -> None:
+    """Remove the workspace runner setting formerly written by pr-tracker."""
+    settings_path = station_path / ".amp" / "settings.json"
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        if not isinstance(settings, dict):
+            return
+        if "amp.remoteThreadCreation.enabled" not in settings:
+            return
+        settings.pop("amp.remoteThreadCreation.enabled")
+        if settings:
+            from safe_file import atomic_write
+
+            atomic_write(settings_path, json.dumps(settings, indent=2) + "\n")
+        else:
+            settings_path.unlink()
+    except (json.JSONDecodeError, OSError):
+        pass
 
 
 class StationDirtyError(Exception):
