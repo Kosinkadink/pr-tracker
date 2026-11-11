@@ -10,20 +10,24 @@ skill wherever the two differ. This skill is the owner's working checklist
 for that policy. Coordination is three persistent threads: the desk (talks to
 the user, files issues with acceptance criteria, rules on decisions), the
 dispatcher (creates and succeeds owner threads, keeps `CURRENT-PRIORITIES.md`
-and `RUNNERS.md`), and the integrator (lands finished pull requests, resolves
-merge conflicts, may push to owner branches, owns red main). Owners never
-merge to main and never merge main into a pull request that is waiting to
-land; the integrator does both.
+and `RUNNERS.md`), and the integrator (resolves merge conflicts on verified
+heads, lands any `ready-to-land` pull request its owner has not merged, owns
+red main). An owner merges its own verified pull request (see Feature
+ownership). An owner adds a plain merge of main to its own branch only when
+GitHub reports a conflict or its checks need a repair that landed on main,
+and only on a head without a verdict; a conflict on a head that holds a PASS
+goes to the integrator.
 
 ## Feature ownership
 
 One thread owns one feature issue until it closes. The owner posts a plan on
 the issue before coding, implements on one branch in its own lane, runs the
 repository's fast gates, commissions a fresh-context verifier against the
-issue's acceptance criteria, and on `VERDICT: PASS` adds the label
-`ready-to-land` to the pull request. Landing is that label, not a message.
-The owner then starts its next item; the integrator lands the pull request
-and closes the issue.
+issue's acceptance criteria. On `VERDICT: PASS` with green hosted checks at
+the exact head, the owner marks the pull request non-draft, adds the label
+`ready-to-land` and performs the exact-head-guarded squash merge itself in
+the turn it reads the PASS. It then posts the landing comment, removes the
+label and starts its next item. No landing request is messaged to anyone.
 
 Routine work needs no approval: branches, commits, pushes, draft pull
 requests, issue comments, worker and verifier threads. Message the
@@ -81,8 +85,12 @@ for a bounded fresh-context subagent that needs no thread of its own.
    posts `VERDICT: PASS - <head>` or `VERDICT: FAIL - <head>` on the wrapper
    issue; packet hygiene goes under `PACKET:` lines, never as a FAIL.
 4. From the verification request until the verdict, push nothing to the
-   branch; a push voids the verdict. After the second FAIL on one pull
-   request, stop and let the dispatcher open a `decision` issue.
+   branch; a push voids the verdict. A FAIL that names a finding in the
+   change is repaired and re-verified. After the second such FAIL on one
+   pull request, queue the desk one message with both verdict links and
+   keep repairing what they named. A FAIL caused by the verifier's
+   environment, or by a hosted check that had not finished, is corrected
+   and re-verified without asking and does not count.
 5. Verify a worker's diff and rerun its checks yourself before freezing a
    head that includes it.
 
@@ -92,8 +100,7 @@ for a bounded fresh-context subagent that needs no thread of its own.
   made it. Heads are 40-hex SHAs pasted from `git rev-parse HEAD` or the API.
 - Pull request body line 1: `Refs Kosinkadink/comfy-vibe-station#N`; no
   closing keyword; body carries what the diff does, evidence and the
-  finished `TESTED.md` row. The integrator squash-merges and closes the
-  issue.
+  finished `TESTED.md` row. The owner squash-merges it on PASS.
 - Cross-repository pins point at a landed main SHA the change is compatible
   with; never re-pin because a newer main exists.
 - Never dispatch, rerun or cancel GitHub Actions workflows; never touch
