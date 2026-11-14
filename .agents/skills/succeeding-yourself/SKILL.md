@@ -46,8 +46,8 @@ One comment on the feature's issue containing everything a stranger needs:
    it interrupts the recipient". It lists these successor duties:
    - confirm `hostname` and `pwd` before mutating anything;
    - read the canonical issue, the handoff comment and every listed verdict;
-   - update the feature's owner row in the workspace
-     `CURRENT-PRIORITIES.md` to its own thread ID;
+   - leave the workspace `CURRENT-PRIORITIES.md` alone: the desk moves the
+     owner row when it reads the route notice;
    - comment on the issue: "Owner thread is now T-... (succeeded T-...)";
    - continue as owner under the workspace `DELEGATION.md`.
 3. Grep the prompt for `send_thread_message` and the dispatcher ID before
