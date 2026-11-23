@@ -99,8 +99,8 @@ for a bounded fresh-context subagent that needs no thread of its own.
 - Committed means pushed: every commit reaches `origin` within the turn that
   made it. Heads are 40-hex SHAs pasted from `git rev-parse HEAD` or the API.
 - Pull request body line 1: `Refs Kosinkadink/comfy-vibe-station#N`; no
-  closing keyword; body carries what the diff does, evidence and the
-  finished `TESTED.md` row. The owner squash-merges it on PASS.
+  closing keyword; body carries what the diff does, evidence and what was tested.
+  The owner squash-merges it on PASS.
 - Cross-repository pins point at a landed main SHA the change is compatible
   with; never re-pin because a newer main exists.
 - Never dispatch, rerun or cancel GitHub Actions workflows; never touch
