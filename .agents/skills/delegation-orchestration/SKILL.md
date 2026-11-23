@@ -9,8 +9,8 @@ The workspace `DELEGATION.md` is the coordination policy and wins over this
 skill wherever the two differ. This skill is the owner's working checklist
 for that policy. Coordination is three persistent threads: the desk (talks to
 the user, files issues with acceptance criteria, rules on decisions), the
-dispatcher (creates and succeeds owner threads, keeps `CURRENT-PRIORITIES.md`
-and `RUNNERS.md`), and the integrator (resolves merge conflicts on verified
+dispatcher (creates and succeeds owner threads, keeps the active work list
+(issues labelled `status: active` with an owner block) and `RUNNERS.md`), and the integrator (resolves merge conflicts on verified
 heads, lands any `ready-to-land` pull request its owner has not merged, owns
 red main). An owner merges its own verified pull request (see Feature
 ownership). An owner adds a plain merge of main to its own branch only when

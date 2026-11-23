@@ -7,7 +7,7 @@ description: "Hands a feature-owner Amp thread off to a fresh successor thread w
 
 You are the outgoing thread. Your context is disposable; the feature is not.
 Durable state lives in the canonical issue, the branch, the verifier verdicts
-and `CURRENT-PRIORITIES.md` - never in this conversation. The rollover is
+and the owner block at the top of the issue - never in this conversation. The rollover is
 three steps: park the work, write one handoff comment, launch the successor.
 
 ## 1. Park the work safely
@@ -46,8 +46,8 @@ One comment on the feature's issue containing everything a stranger needs:
    it interrupts the recipient". It lists these successor duties:
    - confirm `hostname` and `pwd` before mutating anything;
    - read the canonical issue, the handoff comment and every listed verdict;
-   - leave the workspace `CURRENT-PRIORITIES.md` alone: the desk moves the
-     owner row when it reads the route notice;
+   - leave the issue's owner block alone: the desk rewrites it when it
+     reads the route notice;
    - comment on the issue: "Owner thread is now T-... (succeeded T-...)";
    - continue as owner under the workspace `DELEGATION.md`.
 3. Grep the prompt for `send_thread_message` and the dispatcher ID before
