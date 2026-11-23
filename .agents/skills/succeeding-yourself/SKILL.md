@@ -1,69 +1,20 @@
 ---
 name: succeeding-yourself
-description: "Hands a feature-owner Amp thread off to a fresh successor thread when the current one grows long, slow, or context-bloated. Use when the user or dispatcher says 'succeed yourself', asks for a context rollover or handoff, or the thread is degrading. The issue plus its dependency verdicts are the handoff document."
+description: "Hands a Dinkster feature to a fresh successor at a natural milestone. Use when a thread degrades or the desk orders succession."
 ---
 
-# Succeeding Yourself
+# Succession
 
-You are the outgoing thread. Your context is disposable; the feature is not.
-Durable state lives in the canonical issue, the branch, the verifier verdicts
-and the owner block at the top of the issue - never in this conversation. The rollover is
-three steps: park the work, write one handoff comment, launch the successor.
+Read the workspace DELEGATION.md first. This is its role-specific policy, not a second checklist. Load only the role you are performing; follow the shared page for cross-role contracts.
 
-## 1. Park the work safely
+## Succession and briefs
 
-- Commit and push the work in progress to the feature branch; leave the tree
-  clean and record branch plus the 40-hex HEAD from `git rev-parse HEAD`.
-- Do not merge, freeze a head, or rush anything to finish before handing off.
+- The desk checks dependencies before sending a successor brief: every closed issue named as a dependency or cited by the predecessor's plan has issue/verdict link, one-line result and settled questions not to reopen. Include branch, PR URL/head, lane and last verdict. Successors read these verdicts rather than repeat completed work.
 
-## 2. Write the handoff comment on the canonical issue
+- Before archiving a predecessor, every thread briefed with its ID receives a non-steering successor-ID message. Successor registration lists those owners/workers/verifiers/integrator/machine workers so late messages cannot revive obsolete work.
 
-One comment on the feature's issue containing everything a stranger needs:
+## Handoff
 
-- Current state: branch, HEAD, pull request URL and head, lane path, what is
-  done and verified, the last verifier verdict link.
-- Closed dependencies: for every closed issue this issue names as a
-  dependency or your plan cites, its number, verdict link and one-line
-  result, and the questions those results settled so the successor does not
-  reopen them. A successor re-investigating a closed result is the failure
-  this list prevents.
-- Next steps, in order, with file paths.
-- Validation commands and their last known result.
-- Your thread ID.
-
-## 3. Launch the successor
-
-1. Use whichever of `spawn_thread` or `spawn_thread_alt` is present, with
-   `link_parent` false on your own runner, at the same tier you run at
-   (never above medium). A thread never has both: Amp hides the tool that
-   created it, and the successor receives the other one. If neither is
-   present, call `reload_plugins` once; if both are still missing, message
-   the dispatcher for succession instead, quoting your tool list.
-2. The prompt is self-contained: feature issue URL, lane path, branch, the
-   handoff comment link, predecessor thread ID, the dispatcher thread ID,
-   and the sentence "Report via `queue_thread_message` to thread
-   `T-<dispatcher>`; `send_thread_message` is forbidden for reports because
-   it interrupts the recipient". It lists these successor duties:
-   - confirm `hostname` and `pwd` before mutating anything;
-   - read the canonical issue, the handoff comment and every listed verdict;
-   - leave the issue's owner block alone: the desk rewrites it when it
-     reads the route notice;
-   - comment on the issue: "Owner thread is now T-... (succeeded T-...)";
-   - continue as owner under the workspace `DELEGATION.md`.
-3. Grep the prompt for `send_thread_message` and the dispatcher ID before
-   sending; do not send a prompt lacking either.
-
-## 4. Stand down
-
-- Rename yourself with a `(superseded)` suffix.
-- Queue the dispatcher one message with the successor's thread URL so it can
-  archive you, then do no further work on the feature.
-
-## Rules
-
-- Never run two active owners: the successor is the owner the moment its
-  issue comment lands.
-- No handoff markdown files, ledgers, or copies of conversation history; the
-  issue comment is the entire handoff document.
-- If you are a worker (not an owner), reply to your parent that you need
-  succession instead of launching your own successor.
+- At the natural milestone, push coherent work and leave a clean tree. Post one handoff comment on the canonical issue with state, dependency results, next steps, validation results and predecessor ID; never create a parallel handoff file.
+- Launch the successor through the available spawn plugin with `link_parent` false at the authorized owner tier. Give issue/handoff links, lane/branch, predecessor and desk IDs, reporting sentence and dialog prohibition. The successor reads every dependency verdict, registers its new owner thread on the issue, and leaves the owner block for the desk to rewrite.
+- Queue the desk the successor route, rename the predecessor with `(superseded)`, and do no further feature work. Workers ask their commissioning owner for succession rather than create their own successor.
