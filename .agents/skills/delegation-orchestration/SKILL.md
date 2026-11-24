@@ -27,6 +27,8 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 - A PR check caused by an external service may be rerun once only after the owner records job, measured outside cause and evidence it is gone. It is not verifier FAIL; a second failure belongs to the PR until measured otherwise. This never permits main full-validation reruns.
 
+- An intermittent test may be rerun once when it is the PR's only red, the diff touches neither the test nor exercised code, and the test has passed on main. Record job/evidence on the issue and file an intermittent-failure issue with the code's owner, or link the open one, before rerunning the failed job. If it fails again, the PR waits for that issue's fix. This exception covers PR checks only, not main full validation.
+
 ## Owner liveness and remaining scope
 
 - Registry/census owners post measured comparison command, main SHA and `N absent / M differing of K` every twelve hours or ten landings, whichever first. Desk reports latest count and age, marks older counts stale and asks for a refresh that wake. Landing counts, main CI and PR activity are not owner progress.
