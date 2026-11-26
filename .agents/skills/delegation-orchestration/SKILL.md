@@ -11,11 +11,15 @@ Read shared DELEGATION.md first for cross-role contracts; load this policy only 
 
 - Owners, workers, verifiers and security-gap probes use `openai/gpt-6.1-sol`, never Anthropic. Owners set this model explicitly on every created thread, not by inheritance.
 
-- One owner of record plans, implements, commissions workers/verifiers, integrates, tests, freezes, obtains PASS, labels, lands and continues until issue closure, in its own machine/lane. Listed runners are eligible; new work uses only X570 or 270K-Plus2, not CUDA-less LesserRipperPC. X570 sends full/browser suites, real-stack engines and byte comparisons to a bounded 270K-Plus2 worker (64 GB), preserving ports 5199/8765. X570-hardware work stays there, one job at a time. Starters stop/remove engines, suites, containers, databases and services when done; nothing runs between steps.
+- One owner of record plans, implements, commissions workers/verifiers, integrates, tests, freezes, obtains PASS, labels, lands and continues until issue closure, in its own machine/lane. Machine assignment and service/lane cleanup follow shared Machines and safety.
 
-- Owners are top-level threads with creation tools. The desk uses a spawn plugin with `link_parent` false; `create_thread` creates linked children, not owners. An owner lacking `create_thread` and both spawn tools is replaced by the desk. `spawn_thread` and `spawn_thread_alt` are equivalent global User plugins; the creating plugin hides its own tools, so use the other. If neither exists, call `reload_plugins` once and quote the tool list before reporting a defect. Tool-spawned threads cannot select `executor: orb` or `executor: runner`; send other-machine work to that machine's worker with `queue_thread_message`.
+- Owners are top-level with creation tools; desk spawning/replacement follows `coordinating-programs`. `create_thread` makes linked children, not owners. Equivalent global User plugins `spawn_thread`/`spawn_thread_alt` hide their own tools in created threads, so use the other. If neither exists, `reload_plugins` once and quote tool list before reporting a defect. Tool-spawned threads cannot select `executor: orb`/`executor: runner`; queue other-machine work to that machine's worker with `queue_thread_message`.
+
+- Create workers and fresh-context verifiers at low on the owner's runner; a medium worker needs a one-line reason in the plan. Nothing above medium without the user's quoted authorization under the desk tier rule.
 
 ## Feature lifecycle
+
+- The owner of record fixes missing parallel owners or units in the issue owner block.
 
 - Before code, post units, worker assignments and commands/observations proving every criterion; assign each criterion.
 
@@ -33,11 +37,11 @@ Read shared DELEGATION.md first for cross-role contracts; load this policy only 
 
 ## Messages and reporting
 
-- Queue the design thread only for a finished look ready for review (dark pictures and their head), one blocking design-ruling question per note, or a built correction it requested with the showing picture. Progress, partial evidence, tests/gates, plans, ruling receipts and fixtures go on the issue only. Never send a "no reply needed" note. Every owner brief carries this rule.
+- Queue the design thread only for a finished look ready for review (dark pictures and their head), one blocking design-ruling question per note, or a built correction it requested with the showing picture. Progress, partial evidence, tests/gates, plans, ruling receipts and fixtures go on the issue only. Never send a "no reply needed" note.
 
 ## Owner liveness and remaining scope
 
-- Registry/census owners post measured comparison command, main SHA and `N absent / M differing of K` every twelve hours or ten landings, whichever first. Desk reports latest count and age, marks older counts stale and asks for a refresh that wake. Landing counts, main CI and PR activity are not owner progress.
+- Registry/census owners post measured comparison command, main SHA and `N absent / M differing of K` every twelve hours or ten landings, whichever first. Desk freshness/reporting duties follow `coordinating-programs`. Landing counts, main CI and PR activity are not owner progress.
 
 ## Schedules and wake budgets
 
@@ -48,5 +52,7 @@ Read shared DELEGATION.md first for cross-role contracts; load this policy only 
 - [The first-party pack owner](https://github.com/Kosinkadink/comfy-vibe-station/issues/638) and its successors run high under the user's existing role authorization. When it has doable work, a turn ending with a push gets one immediate `COUNT=1` wake within a minute (or desk-equivalent), without a comment/Remaining requirement. The same push-only chaining applies to desk-authorized owners, beginning with [the compositor owners](https://github.com/Kosinkadink/comfy-vibe-station/issues/645). Wait backstops are unchanged.
 
 ## Decisions
+
+- After each stable tag, post exact obsolete dev versions for user web deletion on PyPI, never pinned ones; delete, do not yank, only after one more stable release exists.
 
 - Kosinkadink tags/releases/publication and required official pack version bumps are preapproved, never user decision issues. Owner bumps required versions in its PR and records exact landed SHA/version/tag and approved carried pins on the issue; desk decides publishing time under "Repositories and branches".

@@ -13,6 +13,8 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Verdicts and carries
 
+- On PASS, add `ready-to-land` even when briefed to wait. Unless briefed to wait, enable exact-head squash auto-merge: `gh pr merge N -R Kosinkadink/<repo> --auto --squash --match-head-commit <head>`. On FAIL do neither. These and the verdict are the verifier's only writes. Landing gate/wait conditions are in `integrating-changes`.
+
 - A verifier checks the requested feature on a fresh clone. Line endings, file identity or Windows-only path changes also require a persistent Windows checkout. Its brief links the issue criteria and adds none. It posts exactly one verdict per head on the wrapper issue, reads it back, then removes its own body file: `gh api -X POST repos/Kosinkadink/comfy-vibe-station/issues/N/comments -F body=@FILE`. First line: `VERDICT: PASS - <40-hex head>` or `VERDICT: FAIL - <40-hex head>`.
 
 - Only an unmet issue product criterion is FAIL. Running hosted checks, missing test records, wrong Refs, stale pins, missing exact-head statements and unreproducible ancestry are `PACKET:` notes under PASS, not merge gates. The owner corrects the PR body without moving the head, before labelling when practical. Findings below Medium never force a round alone. FAIL is normal iteration: fix, push, commission a fresh low no-carry verifier, without a decision or pairing ceremony.

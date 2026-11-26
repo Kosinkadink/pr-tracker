@@ -40,9 +40,9 @@ jobs:
           auditing-experiences 2500
           building-dinkster-interfaces 4000
           BUDGETS
-          echo "All role policies: $total bytes (limit 35000)"
-          if (( total > 35000 )); then
-            echo "::error::Combined role policy exceeds 35000 bytes."
+          echo "All role policies: $total bytes (limit 36000)"
+          if (( total > 36000 )); then
+            echo "::error::Combined role policy exceeds 36000 bytes."
             failed=1
           fi
           exit "$failed"

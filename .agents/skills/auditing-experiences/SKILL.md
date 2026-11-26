@@ -9,10 +9,10 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Scope, freezes and audits
 
-- An audit ends with three to five direction questions, each with a recommendation and consequences; other choices are defaults the user may strike, settled at filing unless they cut scope. Define previously ambiguous terms with one concrete example. The desk files implementation from report and answers without re-asking settled defaults.
+- An audit ends with three to five direction questions, each with a recommendation and consequences; other choices are defaults the user may strike, settled at filing unless they cut scope. Define previously ambiguous terms with one concrete example. Desk filing follows `coordinating-programs`.
 
 ## Side-by-side experience comparisons
 
-- Every user-experience audit runs the same task on ComfyUI and Dinkster on the same machine, with timestamped recordings, screenshots of each visible step and side-by-side saved outputs. Report one table of numbers and extra/missing Dinkster steps. The desk files a separate read-only comparison issue after every user-facing milestone.
+- Every user-experience audit runs the same task on ComfyUI and Dinkster on the same machine, with timestamped recordings, screenshots of each visible step and side-by-side saved outputs. Report one table of numbers and extra/missing Dinkster steps.
 
 - Model-port acceptance imports every official ComfyUI template verbatim, including LoRA and workflow variants. Minimal custom workflows only debug, never satisfy acceptance.

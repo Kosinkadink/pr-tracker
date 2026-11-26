@@ -9,9 +9,11 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Roles
 
-- The desk is the user's advisor and program coordinator, one per program at the user's chosen tier. It decides coordination matters not reserved for the user. It files feature, defect, audit and evaluation issues with checkable criteria; chooses owner tiers; assigns, re-scopes, rules, maintains this policy, RUNNERS.md and the active work list; succeeds owners and archives finished threads. It spawns feature and read-only audit/evaluation owners; only read-only audits/evaluations report directly to it. It reads GitHub and every owner's state directly on every wake and before reports, without waiting for messages. It registers user waits as `Desk waits: <event>` on the tracking issue. Rulings are issue comments plus one queued message to the affected owner (integrator for landing). It may steer process corrections, but never implements product code or merges landings. It creates no GitHub subscriptions. Its schedule prompt contains instructions, not changing state.
+- The desk is the user's advisor and program coordinator, one per program at the user's chosen tier. It decides coordination matters not reserved for the user. It files feature, defect, audit and evaluation issues with checkable criteria; chooses owner tiers; assigns, re-scopes, rules, edits this policy when the user asks, maintains RUNNERS.md and the active work list; succeeds owners and archives finished threads. It spawns feature and read-only audit/evaluation owners; only read-only audits/evaluations report directly to it. It reads GitHub and every owner's state directly on every wake and before reports, without waiting for messages. It registers user waits as `Desk waits: <event>` on the tracking issue. Rulings are issue comments plus one queued message to the affected owner (integrator for landing). It may steer process corrections, but never implements product code or merges landings. It creates no GitHub subscriptions. Its schedule prompt contains instructions, not changing state.
 
 - Owners default to medium; the desk may choose low for sufficiently specified work. No thread except the desk and user-named audits runs above medium without the user's quoted authorization for that thread. Delegated models follow `delegation-orchestration`, Roles; the first-party pack tier exception is in "Schedules and wake budgets".
+
+- Spawn owners through the spawn plugin with `link_parent` false and explicit model `openai/gpt-6.1-sol`. Replace an owner lacking `create_thread` and both spawn tools; do not route verifier creation elsewhere.
 
 ## Feature lifecycle
 
@@ -19,9 +21,15 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Scope, freezes and audits
 
-- The desk may fan independent remaining units out to parallel owners on different runners after the shared contract lands. Each uses a small main-based PR and its own verifier. One owner of record keeps cross-cutting work and final acceptance; every unit and criterion must be met before closure. The issue owner block lists every parallel owner and unit; the owner of record fixes omissions.
+- The desk may fan independent remaining units out to parallel owners on different runners after the shared contract lands. Each uses a small main-based PR and its own verifier. One owner of record keeps cross-cutting work and final acceptance; every unit and criterion must be met before closure. The issue owner block lists every parallel owner and unit; owner maintenance is in `delegation-orchestration`.
 
 ## Owner liveness and remaining scope
+
+- Every user report names main red for over an hour until green: first-red time, culprit, repair PR and head. A red lane over four hours with no fix in flight is a finding for the desk. Report census counts older than twelve hours as stale and ask the owner of record for a refresh that wake.
+
+- Before sending a successor brief, check every closed dependency named by the issue or predecessor's plan: issue/verdict link, one-line result and settled questions not to reopen must all be present; otherwise do not send it.
+
+- File audit implementation from the report and user's answers without re-asking settled defaults. After each user-facing milestone lands, file a separate read-only side-by-side experience comparison issue.
 
 - On every wake and before status reports, the desk calls `get_thread_status` for every owner/parallel owner from the active list, calculating idle age from `agentState.updatedAt`. Failed environment startup with automatic retries stopped is parked, not working: queue one resume from the last Remaining line and record `Resumed <thread> at <time>` on its issue. A scheduled wake alone cannot resume it.
 
@@ -29,7 +37,7 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 - Once per wake, at most, the desk runs `reporting-thread-usage` (account limit 60 calls/hour), comparing active threads' 24-hour requests with pushes/comments/verdicts/messages. Report threads with 24 hours of wakes but no mutation, over 100 million tokens/day, or standing schedules faster than hourly/missing UNTIL, with recommended subscription, succession, re-scope or archive. Apply schedule corrections that wake; archive helpers of closed issues.
 
-- A desk-owned medium checker scans stalled PRs every 30 minutes, the sole exception to hourly standing schedules, with UNTIL within 72 hours renewed by the desk. A PR stalls on failed checks without a subsequent commit, conflict, or no pending check/commit for an hour without `ready-to-land`; green ready heads over 15 minutes stall on the integrator. Red/conflict is never a valid wait: the owner repairs or names the exact blocker only another thread/user can remove, and the desk removes it next wake. The checker uses the PR's Owner thread line, falling back to issue owner block. First finding queues owner the PR/check/conflict/idle time. Same blocked head next check with no owner comment -> desk succeeds owner next wake. Third finding -> desk within an hour assigns a new owner, closes it or records its blocker and labels `parked`. Checker skips parked; desk removes that label when blocker clears.
+- A desk-owned medium checker scans stalled PRs every 30 minutes, the sole exception to hourly standing schedules, with UNTIL within 72 hours renewed by the desk. A PR stalls on failed checks without a subsequent commit, conflict, or no pending check/commit for an hour without `ready-to-land`; green ready heads over 15 minutes stall on the integrator. Red/conflict waits follow shared Schedules and wake budgets. The checker uses the PR's Owner thread line, falling back to issue owner block. First finding queues owner the PR/check/conflict/idle time. Same blocked head next check with no owner comment -> desk succeeds owner next wake. Third finding -> desk within an hour assigns a new owner, closes it or records its blocker and labels `parked`. Checker skips parked; desk removes that label when blocker clears.
 
 ## Messages and reporting
 
@@ -37,7 +45,7 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Decisions
 
-- `DECISIONS.md` at the workspace root defines the open-issue register. Only questions affecting cross-family generalization, UX, spend or safety become `decision` issues, filed by desk/integrator before asking. Other implementation choices use obvious defaults, ComfyUI behavior where available, recorded on feature issue/PR. Workflow dispatches outside authorized reruns, force pushes, tier above medium, Comfy-Org mutation and repository visibility/creation are decisions when they meet those classes.
+- `DECISIONS.md` at the workspace root defines the open-issue register. Question classification and ordinary defaults follow shared Decisions. Workflow dispatches outside authorized reruns, force pushes, tier above medium, Comfy-Org mutation, repository visibility/creation and vetoes of designs for which the desk stated a default are decisions when they meet those classes.
 
 - Provenance is `User ruling (direct)` with exact quote, `User ruling (relayed by thread T-...)` with quote/source, or `Desk default` / `Applied by default`. Never infer acceptance from the user's question. Desk records chat answers verbatim on the issue and queues the affected thread once.
 
@@ -49,7 +57,7 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 - Desk alone pushes Kosinkadink release tags from a fresh clone at the recorded landed SHA with approved pins. Nonpublishing workflow-test tags may use a frozen head with fresh low PASS and exact-head green. It subscribes to the release workflow and reads the result; report failures on the issue, never retag/rerun. Owners never push tags. All needed engine, Stable/dev channel, regular/prerelease Desktop, official-pack and PyPI publications are preapproved while nobody uses Dinkster; a new PyPI name still needs the user to register its pending trusted publisher. Never ask the user for publication go-ahead.
 
-- Python packages publish stable/dev to PyPI under one PEP 440 scheme, dev wheel-only; packs and dinkster-pack-helpers use the registry index. releases.dinkster.org holds non-Python artifacts and mirrors only. After each stable tag, the owner lists exact obsolete dev versions for user web deletion, never versions still pinned; delete, do not yank, after one more stable release exists.
+- Python packages publish stable/dev to PyPI under one PEP 440 scheme, dev wheel-only; packs and dinkster-pack-helpers use the registry index. releases.dinkster.org holds non-Python artifacts and mirrors only. Owner dev-version deletion reports follow `delegation-orchestration`, Decisions.
 
 - Kitchen/aimdo forks track upstream releases via desk-filed sync features for releases the user judges fit; product pins move to fork releases.
 

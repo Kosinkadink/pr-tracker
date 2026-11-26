@@ -9,9 +9,9 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Succession and briefs
 
-- The desk checks dependencies before sending a successor brief: every closed issue named as a dependency or cited by the predecessor's plan has issue/verdict link, one-line result and settled questions not to reopen. Include branch, PR URL/head, lane and last verdict. Successors read these verdicts rather than repeat completed work.
+- Dependency checks before a successor brief follow `coordinating-programs`. Include branch, PR URL/head, lane and last verdict. Successors read the dependency verdicts and settled questions rather than repeat completed work.
 
-- Successions, new owner IDs, handoffs and subscription notices go on the issue and to the desk only when asked, never to design or other user-facing threads. Neighbours read the issue owner block. Before predecessor archive, dependent implementation threads briefed with its ID receive non-steering successor IDs; registration lists those owners/workers/verifiers/integrator/machine workers.
+- Before predecessor archive, dependent implementation threads briefed with its ID receive non-steering successor IDs; registration lists those owners/workers/verifiers/integrator/machine workers. User-facing notification boundaries are in shared Messages and reporting.
 
 ## Handoff
 
