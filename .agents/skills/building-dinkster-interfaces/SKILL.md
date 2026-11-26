@@ -9,6 +9,8 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Product design rules
 
+- A PR changing visible UI embeds one screenshot per changed state in its description, using URLs from Amp `published_file_url` or artifact-file uploads, not paths or pointers to threads/comments. Missing images block requesting verification, ready-to-land, landing and sharing the PR with user/design. A verifier finding missing images posts no verdict and tells the owner; the owner adds images and asks that verifier again on the same head, since description edits do not move it.
+
 - All Dinkster UIs use the shared design rules, tokens, one stylesheet, one SolidJS component package and gallery. Literal colors/font sizes, raw controls and classes outside the stylesheet fail builds. New patterns enter the gallery in their own change before screens use them; prototype code is a design reference, not production source to copy. User-facing design lands after ordinary gates; user reviews live/QA afterwards and findings become follow-ups. Browser interaction checks still gate landing.
 
 - Button color: add/create cyan `#32E6C5`; remove/revoke/disable coral `#FF7468`; other actions neutral, except a solid screen-primary action (Sign in, Save, Continue) is cyan with dark label. Colored outlines have matching labels; neutral outlines are gray `#7D8792` with light `#F2F4F5` labels. Exact values and the roles table live in the shared rules file read by every flow spec. Verification checks role, outline, fill and label.

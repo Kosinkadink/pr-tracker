@@ -11,10 +11,10 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 - The desk checks dependencies before sending a successor brief: every closed issue named as a dependency or cited by the predecessor's plan has issue/verdict link, one-line result and settled questions not to reopen. Include branch, PR URL/head, lane and last verdict. Successors read these verdicts rather than repeat completed work.
 
-- Before archiving a predecessor, every thread briefed with its ID receives a non-steering successor-ID message. Successor registration lists those owners/workers/verifiers/integrator/machine workers so late messages cannot revive obsolete work.
+- Successions, new owner IDs, handoffs and subscription notices go on the issue and to the desk only when asked, never to design or other user-facing threads. Neighbours read the issue owner block. Before predecessor archive, dependent implementation threads briefed with its ID receive non-steering successor IDs; registration lists those owners/workers/verifiers/integrator/machine workers.
 
 ## Handoff
 
 - At the natural milestone, push coherent work and leave a clean tree. Post one handoff comment on the canonical issue with state, dependency results, next steps, validation results and predecessor ID; never create a parallel handoff file.
 - Launch the successor through the available spawn plugin with `link_parent` false at the authorized owner tier. Give issue/handoff links, lane/branch, predecessor and desk IDs, reporting sentence and dialog prohibition. The successor reads every dependency verdict, registers its new owner thread on the issue, and leaves the owner block for the desk to rewrite.
-- Queue the desk the successor route, rename the predecessor with `(superseded)`, and do no further feature work. Workers ask their commissioning owner for succession rather than create their own successor.
+- Rename the predecessor with `(superseded)` and do no further feature work. Workers ask their commissioning owner for succession rather than create their own successor.
