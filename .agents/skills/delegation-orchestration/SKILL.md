@@ -1,126 +1,58 @@
 ---
 name: delegation-orchestration
-description: Feature-owner delegation for multi-thread Amp development under the workspace DELEGATION.md. Use when owning a feature end to end, launching machine-local worker or verifier threads, keeping issue and PR evidence, or handing a feature to a fresh thread.
+description: "Owns Dinkster features from issue plan through verification and landing. Use when acting as a feature owner or commissioning workers and verifiers."
 ---
 
-# Delegation Orchestration
+# Feature owner
 
-The workspace `DELEGATION.md` is the coordination policy and wins over this
-skill wherever the two differ. This skill is the owner's working checklist
-for that policy. Coordination is three persistent threads: the desk (talks to
-the user, files issues with acceptance criteria, rules on decisions), the
-dispatcher (creates and succeeds owner threads, keeps the active work list
-(issues labelled `status: active` with an owner block) and `RUNNERS.md`), and the integrator (resolves merge conflicts on verified
-heads, lands any `ready-to-land` pull request its owner has not merged, owns
-red main). An owner merges its own verified pull request (see Feature
-ownership). An owner adds a plain merge of main to its own branch only when
-GitHub reports a conflict or its checks need a repair that landed on main,
-and only on a head without a verdict; a conflict on a head that holds a PASS
-goes to the integrator.
+Read shared DELEGATION.md first for cross-role contracts; load this policy only when acting as owner.
 
-## Feature ownership
+## Roles
 
-One thread owns one feature issue until it closes. The owner posts a plan on
-the issue before coding, implements on one branch in its own lane, runs the
-repository's fast gates, commissions a fresh-context verifier against the
-issue's acceptance criteria. On `VERDICT: PASS` with green hosted checks at
-the exact head, the owner marks the pull request non-draft, adds the label
-`ready-to-land` and performs the exact-head-guarded squash merge itself in
-the turn it reads the PASS. It then posts the landing comment, removes the
-label and starts its next item. No landing request is messaged to anyone.
+- Owners, workers, verifiers and security-gap probes use `openai/gpt-6.1-sol`, never Anthropic. Owners set this model explicitly on every created thread, not by inheritance.
 
-Routine work needs no approval: branches, commits, pushes, draft pull
-requests, issue comments, worker and verifier threads. Message the
-dispatcher only for a blocker or a finding it must act on (a lost thread, a
-machine problem). Design questions that need the user become `decision`
-issues, never chat.
+- One owner of record plans, implements, commissions workers/verifiers, integrates, tests, freezes, obtains PASS, labels, lands and continues until issue closure, in its own machine/lane. Machine assignment and service/lane cleanup follow shared Machines and safety.
 
-An owner never narrows its posted plan, never marks scope "later" or
-"follow-up", and never closes an issue around a gap; only the user re-scopes.
-Defects found outside the accepted scope get their own issues with measured
-evidence and checkable acceptance criteria.
+- Owners are top-level with creation tools; desk spawning/replacement follows `coordinating-programs`. `create_thread` makes linked children, not owners. Equivalent global User plugins `spawn_thread`/`spawn_thread_alt` hide their own tools in created threads, so use the other. If neither exists, `reload_plugins` once and quote tool list before reporting a defect. Tool-spawned threads cannot select `executor: orb`/`executor: runner`; queue other-machine work to that machine's worker with `queue_thread_message`.
 
-## Message rules
+- Create workers and fresh-context verifiers at low on the owner's runner; a medium worker needs a one-line reason in the plan. Nothing above medium without the user's quoted authorization under the desk tier rule.
 
-- Use `queue_thread_message` for every report between threads; it is a
-  global User plugin (call `reload_plugins` if missing). Set `steer` true
-  only for stops and corrections. Never use `send_thread_message` for a
-  report; it interrupts the recipient.
-- Every brief for another thread contains, with the recipient ID filled in:
-  "Report via `queue_thread_message` to thread `T-...`;
-  `send_thread_message` is forbidden for reports because it interrupts the
-  recipient". Grep the brief for both before sending.
-- Never write "steer: false" or any steer marker in a message body.
-- Every instruction states its API precondition (exact PR head or main SHA)
-  and the recipient checks it before acting.
-- End every turn within 30 minutes; run long commands in the background so
-  queued messages arrive. Pushes, plans and progress are visible on GitHub
-  and are never messaged.
-- Report to the thread that briefed you, never to the desk or the user
-  directly unless the brief names them.
+## Feature lifecycle
 
-## Launching workers and verifiers
+- The owner of record fixes missing parallel owners or units in the issue owner block.
 
-Owners are top-level threads with thread-creation tools. Two identical
-global plugins provide `spawn_thread` and `spawn_thread_alt`; Amp hides a
-plugin's own tool inside the threads that plugin creates, so a thread has
-whichever one did not create it. Use whichever is present with
-`link_parent` false so the child keeps its own creation tools (the child
-then holds the other one). If neither is present, call `reload_plugins`
-once and quote the tool list to the dispatcher if both are still missing.
-`executor: orb` and `executor: runner` are refused for tool-spawned
-threads, so work on another machine goes to that machine's persistent
-machine worker (listed in `RUNNERS.md`) by `queue_thread_message`. Use Task
-for a bounded fresh-context subagent that needs no thread of its own.
+- Before code, post units, worker assignments and commands/observations proving every criterion; assign each criterion.
 
-1. Use a worker only for real parallelism or context isolation; otherwise do
-   the work yourself. Workers and verifiers are `low`; a medium worker needs
-   a one-line reason in the plan. Nothing an owner creates runs above medium.
-2. Write a self-contained brief: goal, repository, exact base and branch,
-   lane path, constraints, exact commands, non-goals, the reporting sentence
-   above, and "send one consolidated reply when done".
-3. A verifier is fresh-context and has not seen the implementation
-   conversation. Give it the issue link, branch, exact 40-hex head,
-   acceptance criteria and a deleted-tests diff against the merge base. It
-   posts `VERDICT: PASS - <head>` or `VERDICT: FAIL - <head>` on the wrapper
-   issue; packet hygiene goes under `PACKET:` lines, never as a FAIL.
-4. From the verification request until the verdict, push nothing to the
-   branch; a push voids the verdict. A FAIL that names a finding in the
-   change is repaired and re-verified. After the second such FAIL on one
-   pull request, queue the desk one message with both verdict links and
-   keep repairing what they named. A FAIL caused by the verifier's
-   environment, or by a hosted check that had not finished, is corrected
-   and re-verified without asking and does not count.
-5. Verify a worker's diff and rerun its checks yourself before freezing a
-   head that includes it.
+- Shared-file claims are not posted; mention overlap once in the plan or ask the integrator to sequence landings. Maintain one edited progress table on the issue, with at most one short progress comment daily or when blocked, not per push. Every posted status row/comment has `Remaining:` naming unmet acceptance bullets by number, measured scope and next item (registry: `N absent / M differing of K`).
 
-## Accountability
+- Verify: development pushes have no per-push gates or receipts. Run touched tests while developing; once offering a head for landing, run applicable format/lint/types, hosted checks and a fresh low no-carry verifier concurrently. Mark the PR ready for review in the freeze turn; return it to draft on resumed development. No freeze receipt or full-validation dispatch is needed. Repository "before any commit" checks mean before freeze. Commission the verifier immediately on the pushed frozen head, without waiting for GPU/numerical evidence. Every smoke/packet wrapper is tracked in a Kosinkadink repository and its exact head is on the issue. See "Testing and CI" for gates and "Verdicts and carries" for verdicts.
 
-- Committed means pushed: every commit reaches `origin` within the turn that
-  made it. Heads are 40-hex SHAs pasted from `git rev-parse HEAD` or the API.
-- Pull request body line 1: `Refs Kosinkadink/comfy-vibe-station#N`; no
-  closing keyword; body carries what the diff does, evidence and what was tested.
-  The owner squash-merges it on PASS.
-- Cross-repository pins point at a landed main SHA the change is compatible
-  with; never re-pin because a newer main exists.
-- Never dispatch, rerun or cancel GitHub Actions workflows; never touch
-  Actions secrets or deploy keys. Public repositories run hosted runners only.
-- Evidence goes on issues, never as files committed to code repositories.
+## Testing and CI
 
-## Safety
+- During service setup, owners may create/rotate/delete Actions secrets and deploy keys their issue needs, recording names, never values; authority after setup is not ruled. Identity and its dependent publisher-sign-in work may set repository variables, rerun failed workflows and deploy, recording each action. The official pack publication owner may dispatch catch-up for main-declared versions missing from the public registry and records result.
 
-- Confirm `hostname` and `pwd` once per session before mutating anything.
-- Work only in your own lane under `lanes/`; never touch another thread's
-  checkout, branch, service, port or process. Never edit the runner root's
-  nested checkouts.
-- GPU work on shared machines runs inside `flock ~/gpu-claims/gpuN.lock`;
-  wait for holders, never kill them. RipperPC GPU0 is reserved for the user.
-- Never print credentials; scope tokens to the single command that needs
-  them. Never override Git identity.
+- A PR check caused by an external service may be rerun once only after the owner records job, measured outside cause and evidence it is gone. It is not verifier FAIL; a second failure belongs to the PR until measured otherwise. This never permits main full-validation reruns.
 
-## Continuity
+- An intermittent test may be rerun once when it is the PR's only red, the diff touches neither the test nor exercised code, and the test has passed on main. Record job/evidence on the issue and file an intermittent-failure issue with the code's owner, or link the open one, before rerunning the failed job. If it fails again, the PR waits for that issue's fix. This exception covers PR checks only, not main full validation.
 
-When you grow long, slow or context-bloated, or the dispatcher says so, load
-`succeeding-yourself`. The issue plus its dependency verdicts are the handoff
-document. If you are a worker, ask your parent for succession instead of
-launching your own successor.
+## Messages and reporting
+
+- Queue the design thread only for a finished look ready for review (dark pictures and their head), one blocking design-ruling question per note, or a built correction it requested with the showing picture. Progress, partial evidence, tests/gates, plans, ruling receipts and fixtures go on the issue only. Never send a "no reply needed" note.
+
+## Owner liveness and remaining scope
+
+- Registry/census owners post measured comparison command, main SHA and `N absent / M differing of K` every twelve hours or ten landings, whichever first. Desk freshness/reporting duties follow `coordinating-programs`. Landing counts, main CI and PR activity are not owner progress.
+
+## Schedules and wake budgets
+
+- Freeze a whole unit after at most five bounded behavior heads offered for PR verification; ordinary development pushes do not count. After five, freeze or ask the desk to split with new criteria. Issue comment cap 2,500 or PR body near 262,144 characters means stop, post a one-screen summary and ask the desk to split, not open a continuation yourself.
+
+- Use `succeeding-yourself` when the thread degrades (slow, loses state, repeats work or rising per-turn cost); 2,000 messages is an additional backstop unless the user sets another. Handoff only at a PR landing/issue closure, not mid-PR. The desk orders it for those conditions, not message count below the backstop.
+
+- [The first-party pack owner](https://github.com/Kosinkadink/comfy-vibe-station/issues/638) and its successors run high under the user's existing role authorization. When it has doable work, a turn ending with a push gets one immediate `COUNT=1` wake within a minute (or desk-equivalent), without a comment/Remaining requirement. The same push-only chaining applies to desk-authorized owners, beginning with [the compositor owners](https://github.com/Kosinkadink/comfy-vibe-station/issues/645). Wait backstops are unchanged.
+
+## Decisions
+
+- After each stable tag, post exact obsolete dev versions for user web deletion on PyPI, never pinned ones; delete, do not yank, only after one more stable release exists.
+
+- Kosinkadink tags/releases/publication and required official pack version bumps are preapproved, never user decision issues. Owner bumps required versions in its PR and records exact landed SHA/version/tag and approved carried pins on the issue; desk decides publishing time under "Repositories and branches".

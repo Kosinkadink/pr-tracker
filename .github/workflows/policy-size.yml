@@ -1,0 +1,48 @@
+name: Role policy size
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  role-policy-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Enforce each role policy byte budget
+        shell: bash
+        run: |
+          total=0
+          failed=0
+          while read -r skill limit; do
+            path=".agents/skills/$skill/SKILL.md"
+            size=$(wc -c < "$path")
+            total=$((total + size))
+            echo "$skill: $size bytes (limit $limit)"
+            if (( size > limit )); then
+              echo "::error file=$path::Role policy exceeds $limit bytes; edit existing rules instead of appending."
+              failed=1
+            fi
+          done <<'BUDGETS'
+          coordinating-programs 10000
+          delegation-orchestration 6500
+          verifying-features 2500
+          integrating-changes 4000
+          maintaining-main-health 3500
+          executing-worker-packets 2500
+          succeeding-yourself 3000
+          auditing-experiences 2500
+          building-dinkster-interfaces 4000
+          BUDGETS
+          echo "All role policies: $total bytes (limit 36000)"
+          if (( total > 36000 )); then
+            echo "::error::Combined role policy exceeds 36000 bytes."
+            failed=1
+          fi
+          exit "$failed"
