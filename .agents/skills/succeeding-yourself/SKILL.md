@@ -9,7 +9,7 @@ Read the workspace DELEGATION.md first. This is its role-specific policy, not a 
 
 ## Succession and briefs
 
-- Dependency checks before a successor brief follow `coordinating-programs`. Include branch, PR URL/head, lane and last verdict. Successors read the dependency verdicts and settled questions rather than repeat completed work.
+- Dependency checks before a successor brief follow `coordinating-programs`. Include branch, PR URL/head, lane and last verdict. The brief lists every closed dependency named by the issue or the predecessor's plan, with its issue, verdict link, one-line result and the settled questions not to reopen. Successors read the dependency verdicts and settled questions rather than repeat completed work.
 
 - Before predecessor archive, dependent implementation threads briefed with its ID receive non-steering successor IDs; registration lists those owners/workers/verifiers/integrator/machine workers. User-facing notification boundaries are in shared Messages and reporting.
 
